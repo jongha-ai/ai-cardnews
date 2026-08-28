@@ -1,0 +1,6 @@
+{
+  "name": "AIWORKS 카드뉴스 스튜디오",
+  "description": "주제만 입력하면 헤드라인, 카드 본문, AI 이미지 및 완성형 카드뉴스 슬라이드를 생성하고 편집하는 AIWORKS 전문 스튜디오",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
