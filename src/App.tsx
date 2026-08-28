@@ -205,8 +205,16 @@ export default function App() {
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || '카드뉴스 생성에 실패했습니다.');
+        let errorMsg = '카드뉴스 생성에 실패했습니다.';
+        try {
+          const errData = await res.json();
+          if (errData?.error) errorMsg = errData.error;
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          if (rawText) errorMsg = `서버 응답 오류 (${res.status}): ${rawText.slice(0, 100)}`;
+          else errorMsg = `서버 응답 오류 (${res.status})`;
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();
@@ -276,7 +284,15 @@ export default function App() {
       });
 
       if (!res.ok) {
-        throw new Error('슬라이드 개선에 실패했습니다.');
+        let errorMsg = '슬라이드 개선에 실패했습니다.';
+        try {
+          const errData = await res.json();
+          if (errData?.error) errorMsg = errData.error;
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          if (rawText) errorMsg = `서버 응답 오류 (${res.status}): ${rawText.slice(0, 100)}`;
+        }
+        throw new Error(errorMsg);
       }
 
       const refined = await res.json();
@@ -318,8 +334,15 @@ export default function App() {
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'AI 이미지 생성 요청 실패');
+        let errorMsg = 'AI 이미지 생성 요청 실패';
+        try {
+          const errData = await res.json();
+          if (errData?.error) errorMsg = errData.error;
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          if (rawText) errorMsg = `서버 응답 오류 (${res.status}): ${rawText.slice(0, 100)}`;
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();

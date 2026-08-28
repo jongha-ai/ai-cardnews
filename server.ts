@@ -11,14 +11,29 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "25mb" }));
 
-// Lazy initialize GoogleGenAI client
+// CORS middleware for Vercel & cross-origin support
+app.use((_req: Request, res: Response, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  if (_req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Lazy initialize GoogleGenAI client (supports GEMINI_API_KEY, VITE_GEMINI_API_KEY, GOOGLE_API_KEY)
 function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GEMINI_KEY;
+  if (!apiKey || apiKey.trim() === "") {
     return null;
   }
   return new GoogleGenAI({
-    apiKey,
+    apiKey: apiKey.trim(),
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
@@ -77,13 +92,18 @@ async function generateContentWithFallback(
 
 import { extractStockKeywords, buildDynamicStockPhotoUrl } from "./src/utils/photoMatcher";
 
-// Health check
-app.get("/api/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", hasApiKey: !!process.env.GEMINI_API_KEY });
+// Health check (supports both /api/health and /health)
+app.get(["/api/health", "/health"], (_req: Request, res: Response) => {
+  const hasKey = !!(
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY
+  );
+  res.json({ status: "ok", hasApiKey: hasKey });
 });
 
-// Card News Generation API
-app.post("/api/generate-cardnews", async (req: Request, res: Response) => {
+// Card News Generation API (supports both /api/generate-cardnews and /generate-cardnews)
+app.post(["/api/generate-cardnews", "/generate-cardnews"], async (req: Request, res: Response) => {
   try {
     const {
       topic,
@@ -368,7 +388,7 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
 });
 
 // Hybrid AI Image Generation API: Gemini Prompt Enhancement + High-Resolution FLUX Engine
-app.post("/api/generate-image", async (req: Request, res: Response) => {
+app.post(["/api/generate-image", "/generate-image"], async (req: Request, res: Response) => {
   try {
     const { prompt, aspectRatio = "1:1" } = req.body;
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
@@ -467,7 +487,7 @@ User Prompt: "${cleanPrompt}"`,
 });
 
 // Slide Refine API
-app.post("/api/refine-slide", async (req: Request, res: Response) => {
+app.post(["/api/refine-slide", "/refine-slide"], async (req: Request, res: Response) => {
   try {
     const { slide, action, projectContext } = req.body;
     if (!slide || !action) {
