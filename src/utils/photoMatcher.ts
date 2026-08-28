@@ -67,7 +67,7 @@ const SCENE_PHOTO_REGISTRY: Record<string, string[]> = {
     'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?auto=format&fit=crop&w=1200&q=85',
   ],
   'store flyer marketing': [
-    'https://images.unsplash.com/photo-1556742049-0a67e5572263?auto=format&fit=crop&w=1200&q=85',
+    'https://images.unsplash.com/photo-1556740758-90de374c12ad?auto=format&fit=crop&w=1200&q=85',
     'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?auto=format&fit=crop&w=1200&q=85',
     'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1200&q=85',
   ],
@@ -99,7 +99,7 @@ const SCENE_PHOTO_REGISTRY: Record<string, string[]> = {
     'https://images.unsplash.com/photo-1559925393-8be0ec4767c8?auto=format&fit=crop&w=1200&q=85',
   ],
   'retail store checkout counter': [
-    'https://images.unsplash.com/photo-1556742049-0a67e5572263?auto=format&fit=crop&w=1200&q=85',
+    'https://images.unsplash.com/photo-1556742502-ec7c0e9f34b1?auto=format&fit=crop&w=1200&q=85',
     'https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=1200&q=85',
   ],
   'barista brewing specialty coffee': [
@@ -118,7 +118,7 @@ const SCENE_PHOTO_REGISTRY: Record<string, string[]> = {
   ],
   'editing video smartphone screen': [
     'https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=1200&q=85',
-    'https://images.unsplash.com/photo-1574717024453-354056aef981?auto=format&fit=crop&w=1200&q=85',
+    'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&w=1200&q=85',
   ],
   'social media content creation': [
     'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=1200&q=85',
@@ -132,7 +132,7 @@ const SCENE_PHOTO_REGISTRY: Record<string, string[]> = {
   ],
   'podcast microphone studio': [
     'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&w=1200&q=85',
-    'https://images.unsplash.com/photo-1589903102056-142112739a72?auto=format&fit=crop&w=1200&q=85',
+    'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=1200&q=85',
   ],
 
   // 6. Sales / Dashboard / Analytics / Tablet

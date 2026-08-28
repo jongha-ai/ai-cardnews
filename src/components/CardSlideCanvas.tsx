@@ -360,22 +360,13 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
 
     const renderSlideImage = (extraClasses = '', styleObj: React.CSSProperties = {}) => {
       if (!hasValidImage) {
-        const defaultFallback = getSmartTopicPhoto({
-          headline: safeSlide.headline,
-          body: safeSlide.body,
-          slideNumber: safeSlide.slideNumber,
-        });
         return (
-          <img
-            src={defaultFallback}
-            alt="Card visual"
-            referrerPolicy="no-referrer"
-            className={`w-full h-full object-cover ${extraClasses}`}
-            style={{
-              objectPosition: objectPositionStyle,
-              ...styleObj,
-            }}
-          />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-950 text-slate-400 text-xs p-4 select-none">
+            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mb-2 shadow-inner">
+              <Sparkles className="w-5 h-5 text-indigo-400" />
+            </div>
+            <span className="font-medium text-[clamp(0.65rem,2.2cqi,0.78rem)] text-slate-300">이미지 불러오는 중</span>
+          </div>
         );
       }
 
@@ -391,7 +382,7 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
             />
             <img
               src={activeImageSrc}
-              alt={safeSlide.headline || 'Card visual'}
+              alt=""
               referrerPolicy="no-referrer"
               onError={handleImageError}
               className={`relative z-10 max-w-full max-h-full object-contain ${extraClasses}`}
@@ -404,7 +395,7 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
       return (
         <img
           src={activeImageSrc}
-          alt={safeSlide.headline || 'Card visual'}
+          alt=""
           referrerPolicy="no-referrer"
           onError={handleImageError}
           className={`w-full h-full object-cover ${extraClasses}`}
