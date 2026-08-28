@@ -1,6 +1,7 @@
-import React, { forwardRef, useState } from 'react';
+import React, { forwardRef, useState, useEffect } from 'react';
 import { CardSlide, AspectRatio, CardTheme, SlideLayout } from '../types';
 import { Sparkles, Quote, ChevronRight, Hash, Bookmark, ImageOff } from 'lucide-react';
+import { getSmartTopicPhoto } from '../utils/photoMatcher';
 
 const KOREAN_KEYWORD_TRANSLATIONS: Record<string, string> = {
   'minimalist': '미니멀',
@@ -76,6 +77,13 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
     ref
   ) => {
     const [imageLoadFailed, setImageLoadFailed] = useState(false);
+    const [fallbackImgUrl, setFallbackImgUrl] = useState<string | null>(null);
+
+    // Reset image error state whenever the slide changes
+    useEffect(() => {
+      setImageLoadFailed(false);
+      setFallbackImgUrl(null);
+    }, [slide?.id, slide?.imageUrl, slide?.slideNumber]);
 
     // Fallback safe slide object in case slide is undefined
     const safeSlide: CardSlide = slide || {
@@ -327,7 +335,23 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
       }
     };
 
-    const hasValidImage = Boolean(safeSlide.imageUrl && !imageLoadFailed);
+    const handleImageError = () => {
+      if (!fallbackImgUrl) {
+        const fallback = getSmartTopicPhoto({
+          headline: safeSlide.headline,
+          body: safeSlide.body,
+          slideNumber: safeSlide.slideNumber,
+        });
+        if (fallback && fallback !== safeSlide.imageUrl) {
+          setFallbackImgUrl(fallback);
+          return;
+        }
+      }
+      setImageLoadFailed(true);
+    };
+
+    const activeImageSrc = fallbackImgUrl || safeSlide.imageUrl;
+    const hasValidImage = Boolean(activeImageSrc && !imageLoadFailed);
 
     const fitMode = safeSlide.imageFit || 'cover';
     const posMode = safeSlide.imagePosition || 'top';
@@ -336,10 +360,22 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
 
     const renderSlideImage = (extraClasses = '', styleObj: React.CSSProperties = {}) => {
       if (!hasValidImage) {
+        const defaultFallback = getSmartTopicPhoto({
+          headline: safeSlide.headline,
+          body: safeSlide.body,
+          slideNumber: safeSlide.slideNumber,
+        });
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-white/5 text-[clamp(0.65rem,2.2cqi,0.8rem)] opacity-60">
-            <span>이미지 대기 중</span>
-          </div>
+          <img
+            src={defaultFallback}
+            alt="Card visual"
+            referrerPolicy="no-referrer"
+            className={`w-full h-full object-cover ${extraClasses}`}
+            style={{
+              objectPosition: objectPositionStyle,
+              ...styleObj,
+            }}
+          />
         );
       }
 
@@ -348,16 +384,16 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
           <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black/40">
             {/* Ambient subtle blurred backdrop for letterboxing */}
             <img
-              src={safeSlide.imageUrl}
+              src={activeImageSrc}
               alt=""
               aria-hidden="true"
               className="absolute inset-0 w-full h-full object-cover blur-xl scale-110 opacity-35 pointer-events-none"
             />
             <img
-              src={safeSlide.imageUrl}
+              src={activeImageSrc}
               alt={safeSlide.headline || 'Card visual'}
               referrerPolicy="no-referrer"
-              onError={() => setImageLoadFailed(true)}
+              onError={handleImageError}
               className={`relative z-10 max-w-full max-h-full object-contain ${extraClasses}`}
               style={styleObj}
             />
@@ -367,10 +403,10 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
 
       return (
         <img
-          src={safeSlide.imageUrl}
+          src={activeImageSrc}
           alt={safeSlide.headline || 'Card visual'}
           referrerPolicy="no-referrer"
-          onError={() => setImageLoadFailed(true)}
+          onError={handleImageError}
           className={`w-full h-full object-cover ${extraClasses}`}
           style={{
             objectPosition: objectPositionStyle,
@@ -489,25 +525,25 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
                 {fitMode === 'contain' ? (
                   <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black/60">
                     <img
-                      src={safeSlide.imageUrl}
+                      src={activeImageSrc}
                       alt=""
                       aria-hidden="true"
                       className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-35 pointer-events-none"
                     />
                     <img
-                      src={safeSlide.imageUrl}
+                      src={activeImageSrc}
                       alt={safeSlide.headline || 'Card visual'}
                       referrerPolicy="no-referrer"
-                      onError={() => setImageLoadFailed(true)}
+                      onError={handleImageError}
                       className="relative z-10 max-w-full max-h-full object-contain"
                     />
                   </div>
                 ) : (
                   <img
-                    src={safeSlide.imageUrl}
+                    src={activeImageSrc}
                     alt={safeSlide.headline || 'Card visual'}
                     referrerPolicy="no-referrer"
-                    onError={() => setImageLoadFailed(true)}
+                    onError={handleImageError}
                     className="w-full h-full object-cover transition-transform duration-700"
                     style={{ objectPosition: objectPositionStyle }}
                   />
@@ -641,10 +677,10 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
                 style={{ borderColor: accentColor }}
               >
                 <img
-                  src={safeSlide.imageUrl}
+                  src={activeImageSrc}
                   alt="Quote visual"
                   referrerPolicy="no-referrer"
-                  onError={() => setImageLoadFailed(true)}
+                  onError={handleImageError}
                   className="w-full h-full object-cover"
                   style={{ objectPosition: objectPositionStyle }}
                 />

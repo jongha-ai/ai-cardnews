@@ -619,6 +619,7 @@ export default function App() {
                 <div className="flex items-center justify-center w-full max-w-xl transition-all duration-300 my-auto py-2">
                   <ErrorBoundary fallbackTitle={`슬라이드 ${currentSlideIndex + 1} 렌더링 오류`}>
                     <CardSlideCanvas
+                      key={currentSlide.id || `slide-${currentSlideIndex}`}
                       slide={currentSlide}
                       theme={currentTheme}
                       aspectRatio={project.aspectRatio}

@@ -57,6 +57,7 @@ export const AllSlidesGridView: React.FC<AllSlidesGridViewProps> = ({
               <div className="relative rounded-2xl transition-all duration-300 group-hover:scale-[1.01] group-hover:shadow-2xl group-hover:shadow-indigo-500/10">
                 <ErrorBoundary fallbackTitle={`슬라이드 ${index + 1} 렌더링 에러`}>
                   <CardSlideCanvas
+                    key={slide?.id || index}
                     slide={slide}
                     theme={theme}
                     aspectRatio={aspectRatio}
