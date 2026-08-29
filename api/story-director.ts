@@ -3,6 +3,83 @@ import { getGeminiClient, generateContentWithFallback } from './_gemini';
 
 const ALLOWED_SLIDE_TYPES = ['cover', 'problem', 'body', 'stat', 'tip', 'quote', 'summary', 'cta'] as const;
 
+const COMMON_PARTICLES = ['만에', '부터', '까지', '으로', '에서', '에게', '처럼', '보다', '하고', '하며', '하여', '이나', '이라', '이란', '에는', '에도', '은', '는', '이', '가', '을', '를', '의', '에', '도', '만', '로', '와', '과'];
+
+function cleanParticle(unit: string): string {
+  if (!unit) return '';
+  let cleaned = unit;
+  for (const particle of COMMON_PARTICLES) {
+    if (cleaned.length > particle.length && cleaned.endsWith(particle)) {
+      cleaned = cleaned.slice(0, -particle.length);
+      break;
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * Extracts numeric expressions (number + unit/affix) from text with strict structural validation.
+ *
+ * Structural rules:
+ * - "슬라이드 1" ~ "슬라이드 N" (1 <= num <= slideCount)
+ * - "슬라이드 #1" ~ "슬라이드 #N" (1 <= num <= slideCount)
+ * - "총 N장", "N장의 슬라이드" (num === slideCount)
+ * - Standalone "#1", "#2" are strictly NOT structural.
+ */
+function extractNumericExpressions(text: string, options: { slideCount?: number } = {}): Array<{ raw: string; normalized: string; isStructural: boolean }> {
+  if (!text || typeof text !== 'string') return [];
+
+  const slideCount = options.slideCount || 0;
+  const results: Array<{ raw: string; normalized: string; isStructural: boolean }> = [];
+
+  // 1. Identify and mask strict structural references (NO standalone #N)
+  let workingText = text;
+  const structuralRegex = /(?:슬라이드\s*#?\s*(\d+)|총\s*(\d+)\s*장|(\d+)\s*장의?\s*슬라이드)/g;
+  let structMatch: RegExpExecArray | null;
+
+  while ((structMatch = structuralRegex.exec(text)) !== null) {
+    const slideRefNum = structMatch[1] ? Number(structMatch[1]) : null;
+    const totalCountRefNum = (structMatch[2] || structMatch[3]) ? Number(structMatch[2] || structMatch[3]) : null;
+
+    let isStrictlyValidStructure = false;
+    if (slideRefNum !== null && slideRefNum >= 1 && slideRefNum <= slideCount) {
+      isStrictlyValidStructure = true;
+    } else if (totalCountRefNum !== null && totalCountRefNum === slideCount) {
+      isStrictlyValidStructure = true;
+    }
+
+    if (isStrictlyValidStructure) {
+      results.push({
+        raw: structMatch[0],
+        normalized: structMatch[0].replace(/\s+/g, ''),
+        isStructural: true,
+      });
+      workingText = workingText.replace(structMatch[0], ' [STRUCT] ');
+    }
+  }
+
+  // 2. Extract numeric expressions: Number (or Range) + optional Unit/Suffix
+  const numericRegex = /(\d+(?:\.\d+)?(?:\s*[\~–\-]\s*\d+(?:\.\d+)?)?)\s*([%가-힣a-zA-Z]+)?/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = numericRegex.exec(workingText)) !== null) {
+    const rawNum = match[1].replace(/\s+/g, '');
+    const rawUnit = match[2] || '';
+    const cleanedUnit = cleanParticle(rawUnit);
+
+    const fullNormalized = (rawNum + cleanedUnit).trim();
+    if (fullNormalized) {
+      results.push({
+        raw: match[0].trim(),
+        normalized: fullNormalized,
+        isStructural: false,
+      });
+    }
+  }
+
+  return results;
+}
+
 export default async function handler(req: any, res: any) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -61,6 +138,8 @@ export default async function handler(req: any, res: any) {
      * 금지: "매출 200%를 경험하세요" (성과 약속으로 변경 금지)
      * 금지: "매출 대폭 증가" (숫자 누락 금지)
      * 금지: "매출 300% 증가" (수치 조작 금지)
+   - [새로운 숫자 및 단위 생성 절대 금지]: 원본 슬라이드와 프로젝트 입력에 명시되지 않은 어떠한 새로운 숫자나 시간/통계 단위(예: '10분', '1년', '30%', '5가지' 등)도 진단 요약, 전략, 제안 카피 등에 새로 만들어 넣지 마세요.
+   - [원문의 원인/문제/해결책 관계 엄수 (의미 반전 절대 금지)]: 원문의 인과관계와 문제-해결책 관계를 뒤집거나 재해석하지 않는다. (예: 원문에서 '선저축 후지출'이 해결책이고 '지출 후 저축'이 실패 원인이면, '선저축 후지출 실패'처럼 의미와 인과관계를 반대로 뒤집어 표현하지 말 것).
 4. 【CTA 행동 엄수 및 환각 방지】:
    - CTA 슬라이드는 원본에 명시된 행동(예: [저장], [공유] 등)만 유지하세요. 원본에 없는 '홈페이지 방문', '상담 신청', '구매', '다운로드', '팔로우', '더 많은 팁 확인' 등을 임의로 추가하지 마세요.
 5. 【정보 부족 처리 (창작 금지)】:
@@ -216,6 +295,59 @@ ${slidesOverview}
       }
     }
 
+    // Strict Validation: Numeric Expression (Number + Unit) Check
+    const slideCount = slides.length;
+    const allowedNumericExpressions = new Set<string>();
+
+    // 1. Extract approved numeric expressions from metadata
+    [topic, purpose, targetAudience, tone].forEach((txt) => {
+      extractNumericExpressions(txt, { slideCount }).forEach((exp) => {
+        allowedNumericExpressions.add(exp.normalized);
+      });
+    });
+
+    // 2. Extract approved numeric expressions from original slides
+    slides.forEach((s: any) => {
+      [s.headline, s.body, s.badgeText, ...(Array.isArray(s.highlightWords) ? s.highlightWords : [])].forEach((txt) => {
+        extractNumericExpressions(txt, { slideCount }).forEach((exp) => {
+          allowedNumericExpressions.add(exp.normalized);
+        });
+      });
+    });
+
+    // 3. Extract all numeric expressions from AI response
+    const outputTexts: string[] = [];
+    if (parsedResult.overallSummary) outputTexts.push(parsedResult.overallSummary);
+    if (Array.isArray(parsedResult.duplicateIssues)) outputTexts.push(...parsedResult.duplicateIssues);
+    if (Array.isArray(parsedResult.flowIssues)) outputTexts.push(...parsedResult.flowIssues);
+    if (parsedResult.ctaIssue) outputTexts.push(parsedResult.ctaIssue);
+    if (parsedResult.storyStrategy) outputTexts.push(parsedResult.storyStrategy);
+
+    parsedResult.suggestions.forEach((sugg: any) => {
+      if (sugg.badgeText) outputTexts.push(sugg.badgeText);
+      if (sugg.headline) outputTexts.push(sugg.headline);
+      if (sugg.body) outputTexts.push(sugg.body);
+      if (Array.isArray(sugg.highlightWords)) outputTexts.push(...sugg.highlightWords);
+      if (sugg.changeReason) outputTexts.push(sugg.changeReason);
+    });
+
+    // 4. Verify that each non-structural numeric expression exists in the allowed set
+    for (const txt of outputTexts) {
+      const expressions = extractNumericExpressions(txt, { slideCount });
+      for (const exp of expressions) {
+        if (exp.isStructural) {
+          // Explicit structural reference (e.g. "슬라이드 1", "총 5장") is approved
+          continue;
+        }
+        if (!allowedNumericExpressions.has(exp.normalized)) {
+          console.error(`[Story Director] Numeric expression hallucination detected: unapproved expression "${exp.normalized}" (raw: "${exp.raw}") found in AI response. Allowed: [${Array.from(allowedNumericExpressions).join(', ')}]`);
+          return res.status(502).json({
+            error: 'AI 스토리 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+          });
+        }
+      }
+    }
+
     return res.status(200).json(parsedResult);
   } catch (error: any) {
     console.error('Story Director API error:', error);
@@ -224,4 +356,3 @@ ${slidesOverview}
     });
   }
 }
-

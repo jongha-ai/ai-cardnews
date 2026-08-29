@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio } from './types';
+import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio, StoryDirectorAnalysis } from './types';
 import { CARD_THEMES } from './data/themes';
 import { INITIAL_SAMPLE_PROJECT } from './data/samplePresets';
 import { getSmartTopicPhoto, extractStockKeywords, buildDynamicStockPhotoUrl } from './utils/photoMatcher';
@@ -78,6 +78,9 @@ export default function App() {
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isStoryDirectorOpen, setIsStoryDirectorOpen] = useState<boolean>(false);
+  const [storyAnalysis, setStoryAnalysis] = useState<StoryDirectorAnalysis | null>(null);
+  const [isStoryAnalyzing, setIsStoryAnalyzing] = useState<boolean>(false);
+  const [storyAnalysisError, setStoryAnalysisError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isRefining, setIsRefining] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'preview' | 'edit'>('preview');
@@ -493,6 +496,54 @@ export default function App() {
     }));
   };
 
+  // Story Director: Request full story diagnosis from /api/story-director
+  const handleAnalyzeStory = async () => {
+    setIsStoryDirectorOpen(true);
+    setIsStoryAnalyzing(true);
+    setStoryAnalysisError(null);
+    setStoryAnalysis(null);
+
+    try {
+      const requestBody = {
+        topic: project.topic || project.title || '',
+        purpose: project.purpose || '',
+        targetAudience: project.targetAudience || '',
+        tone: project.tone || '',
+        slides: project.slides || [],
+      };
+
+      const response = await fetch('/api/story-director', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'AI 스토리 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errorMsg = errData.error;
+          }
+        } catch (_) {
+          // ignore json error
+        }
+        setStoryAnalysisError(errorMsg);
+        return;
+      }
+
+      const data: StoryDirectorAnalysis = await response.json();
+      setStoryAnalysis(data);
+    } catch (err: any) {
+      console.error('Story Director API request failed:', err);
+      setStoryAnalysisError('AI 스토리 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsStoryAnalyzing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
       {/* Top Navigation Bar */}
@@ -503,7 +554,7 @@ export default function App() {
         onUpdateProject={handleUpdateProject}
         onOpenNewModal={() => setIsNewModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
-        onOpenStoryDirector={() => setIsStoryDirectorOpen(true)}
+        onOpenStoryDirector={handleAnalyzeStory}
       />
 
       {/* Main Workspace Area */}
@@ -712,6 +763,10 @@ export default function App() {
         isOpen={isStoryDirectorOpen}
         onClose={() => setIsStoryDirectorOpen(false)}
         slides={project.slides}
+        analysis={storyAnalysis}
+        isLoading={isStoryAnalyzing}
+        error={storyAnalysisError}
+        onRetry={handleAnalyzeStory}
       />
 
       {/* 📋 Global Clipboard Image Paste Toast */}
