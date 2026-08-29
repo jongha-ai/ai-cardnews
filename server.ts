@@ -88,8 +88,12 @@ async function generateContentWithFallback(
   throw lastError || new Error("All Gemini models failed to respond.");
 }
 
-import { extractStockKeywords, buildDynamicStockPhotoUrl } from "./src/utils/photoMatcher";
-import { searchStockImageCandidates } from "./src/utils/unsplashSearchService";
+import { extractStockKeywords } from "./src/utils/photoMatcher";
+import {
+  searchStockImageCandidates,
+  enrichSlidesWithRankedStockPhotos,
+  trackUnsplashDownload,
+} from "./src/server/unsplashService";
 
 // Health check (supports both /api/health and /health)
 app.get(["/api/health", "/health"], (_req: Request, res: Response) => {
@@ -158,7 +162,6 @@ app.post(["/api/generate-cardnews", "/generate-cardnews"], async (req: Request, 
             body,
             slideNumber: idx + 1,
           });
-          const photoUrl = buildDynamicStockPhotoUrl(keywords.primary_keyword, idx + 1);
           return {
             slideNumber: idx + 1,
             slideType: idx === 0 ? "cover" : idx === count - 1 ? "cta" : "body",
@@ -171,7 +174,9 @@ app.post(["/api/generate-cardnews", "/generate-cardnews"], async (req: Request, 
             imageStyleKeywords: ["고화질 포토", "미니멀", "스튜디오 조명"],
             stockPhotoKeywords: keywords,
             suggestedLayout: "split_top_image",
-            imageUrl: photoUrl,
+            imageUrl: undefined,
+            stockPhotoId: undefined,
+            stockPhotoAttribution: undefined,
           };
         }),
       };
@@ -353,9 +358,10 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
     }
 
     const parsedData = JSON.parse(text);
+    const unsplashKey = process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_KEY || '';
 
-    // Map each slide strictly to a dynamic high-resolution photo based on its headline & body
-    const enrichedSlides = parsedData.slides.map((s: any, idx: number) => {
+    // Map base slides with keywords
+    let enrichedSlides = parsedData.slides.map((s: any, idx: number) => {
       const keywords = s.stockPhotoKeywords?.primary_keyword
         ? s.stockPhotoKeywords
         : extractStockKeywords({
@@ -364,15 +370,28 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
             slideNumber: idx + 1,
           });
 
-      const highResPhotoUrl = buildDynamicStockPhotoUrl(keywords.primary_keyword, idx + 1);
-
       return {
         ...s,
         id: `slide-${Date.now()}-${idx}`,
         stockPhotoKeywords: keywords,
-        imageUrl: highResPhotoUrl,
+        imageUrl: undefined,
+        stockPhotoId: undefined,
+        stockPhotoAttribution: undefined,
       };
     });
+
+    // Best-effort sequential Live Unsplash enrichment
+    if (unsplashKey && unsplashKey.trim()) {
+      try {
+        enrichedSlides = await enrichSlidesWithRankedStockPhotos(
+          enrichedSlides,
+          req.body?.aspectRatio || '1:1',
+          unsplashKey
+        );
+      } catch (stockErr: any) {
+        console.warn('[server generate-cardnews] Stock photo enrichment failed gracefully:', stockErr.message);
+      }
+    }
 
     res.json({
       ...parsedData,
@@ -394,7 +413,6 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
           const headline = idx === 0 ? `✨ ${cleanTopic}\n지금 꼭 알아야 할 핵심 포인트` : `${idx}단계: ${cleanTopic} 핵심 실천 전략`;
           const body = `이 단계에서는 ${cleanTopic}와 관련된 가장 효과적인 실천 방법 및 핵심 지식을 전달합니다.\n2~3문장으로 간결하게 구성하여 모바일에서 한눈에 쏙 들어옵니다.`;
           const keywords = extractStockKeywords({ headline, body, slideNumber: idx + 1 });
-          const photoUrl = buildDynamicStockPhotoUrl(keywords.primary_keyword, idx + 1);
           return {
             slideNumber: idx + 1,
             slideType: idx === 0 ? "cover" : idx === count - 1 ? "cta" : "body",
@@ -407,7 +425,9 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
             imageStyleKeywords: ["고화질 포토", "미니멀", "스튜디오 조명"],
             stockPhotoKeywords: keywords,
             suggestedLayout: "split_top_image",
-            imageUrl: photoUrl,
+            imageUrl: undefined,
+            stockPhotoId: undefined,
+            stockPhotoAttribution: undefined,
           };
         }),
       };
@@ -1099,30 +1119,16 @@ app.post(["/api/stock-image-search", "/stock-image-search"], async (req: Request
 
 // Unsplash Download Tracking API (records download event on Unsplash when user selects photo)
 app.post(["/api/unsplash-track-download", "/unsplash-track-download"], async (req: Request, res: Response) => {
-  const accessKey = process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_KEY;
+  const accessKey = process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_KEY || '';
   if (!accessKey || accessKey.trim() === '') {
     return res.status(500).json({ error: 'UNSPLASH_ACCESS_KEY is not configured.' });
   }
 
   try {
     const { photoId } = req.body || {};
-
-    // Strictly validate photoId format (alphanumeric, dashes, underscores)
-    if (!photoId || typeof photoId !== 'string' || !/^[\w-]{1,64}$/.test(photoId)) {
-      return res.status(400).json({ error: 'Valid photoId is required.' });
-    }
-
-    const targetUrl = `https://api.unsplash.com/photos/${encodeURIComponent(photoId)}/download`;
-
-    const response = await fetch(targetUrl, {
-      headers: {
-        Authorization: `Client-ID ${accessKey}`,
-      },
-    });
-
-    if (!response.ok) {
-      console.warn(`[Unsplash Tracking] Upstream download tracking failed for photo ${photoId} with status ${response.status}`);
-      return res.status(502).json({ error: 'Upstream Unsplash download tracking failed', success: false });
+    const result = await trackUnsplashDownload(photoId, accessKey);
+    if (!result.success) {
+      return res.status(result.status || 502).json({ error: result.error || 'Upstream Unsplash download tracking failed', success: false });
     }
 
     return res.status(200).json({ success: true });

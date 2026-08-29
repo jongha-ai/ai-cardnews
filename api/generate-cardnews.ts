@@ -1,6 +1,7 @@
 import { Type } from '@google/genai';
 import { getGeminiClient, generateContentWithFallback } from './_gemini';
-import { extractStockKeywords, buildDynamicStockPhotoUrl } from '../src/utils/photoMatcher';
+import { extractStockKeywords } from '../src/utils/photoMatcher';
+import { enrichSlidesWithRankedStockPhotos } from '../src/server/unsplashService';
 
 export default async function handler(req: any, res: any) {
   // Enable CORS
@@ -42,7 +43,6 @@ export default async function handler(req: any, res: any) {
         const headline = idx === 0 ? `✨ ${cleanTopic}\n지금 꼭 알아야 할 핵심 포인트` : `${idx}단계: ${cleanTopic} 핵심 실천 전략`;
         const body = `이 단계에서는 ${cleanTopic}와 관련된 가장 효과적인 실천 방법 및 핵심 지식을 전달합니다.\n2~3문장으로 간결하게 구성하여 모바일에서 한눈에 쏙 들어옵니다.`;
         const keywords = extractStockKeywords({ headline, body, slideNumber: idx + 1 });
-        const photoUrl = buildDynamicStockPhotoUrl(keywords.primary_keyword, idx + 1);
         return {
           slideNumber: idx + 1,
           slideType: idx === 0 ? 'cover' : idx === count - 1 ? 'cta' : 'body',
@@ -55,7 +55,9 @@ export default async function handler(req: any, res: any) {
           imageStyleKeywords: ['고화질 포토', '미니멀', '스튜디오 조명'],
           stockPhotoKeywords: keywords,
           suggestedLayout: 'split_top_image',
-          imageUrl: photoUrl,
+          imageUrl: undefined,
+          stockPhotoId: undefined,
+          stockPhotoAttribution: undefined,
         };
       }),
     };
@@ -222,7 +224,10 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
     }
 
     const parsedData = JSON.parse(text);
-    const enrichedSlides = parsedData.slides.map((s: any, idx: number) => {
+    const unsplashKey = process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_KEY || '';
+
+    // Default basic slide normalization
+    let enrichedSlides = parsedData.slides.map((s: any, idx: number) => {
       const keywords = s.stockPhotoKeywords?.primary_keyword
         ? s.stockPhotoKeywords
         : extractStockKeywords({
@@ -231,15 +236,28 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
             slideNumber: idx + 1,
           });
 
-      const highResPhotoUrl = buildDynamicStockPhotoUrl(keywords.primary_keyword, idx + 1);
-
       return {
         ...s,
         id: `slide-${Date.now()}-${idx}`,
         stockPhotoKeywords: keywords,
-        imageUrl: highResPhotoUrl,
+        imageUrl: undefined,
+        stockPhotoId: undefined,
+        stockPhotoAttribution: undefined,
       };
     });
+
+    // Best-effort sequential Live Unsplash enrichment
+    if (unsplashKey && unsplashKey.trim()) {
+      try {
+        enrichedSlides = await enrichSlidesWithRankedStockPhotos(
+          enrichedSlides,
+          aspectRatio || '1:1',
+          unsplashKey
+        );
+      } catch (stockErr: any) {
+        console.warn('[Vercel generate-cardnews] Stock photo enrichment failed gracefully:', stockErr.message);
+      }
+    }
 
     return res.status(200).json({
       ...parsedData,

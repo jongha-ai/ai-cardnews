@@ -366,33 +366,80 @@ export async function searchStockImageCandidates(
     return null;
   };
 
+  let bestFallbackResult: StockSearchResult | null = null;
+
+  const updateBestFallback = (candidateResult: StockSearchResult) => {
+    if (!bestFallbackResult) {
+      bestFallbackResult = candidateResult;
+      return;
+    }
+
+    const currentTop = candidateResult.rankedCandidates[0];
+    const bestTop = bestFallbackResult.rankedCandidates[0];
+
+    const currentScore = currentTop ? currentTop.rankScore.totalScore : -1;
+    const bestScore = bestTop ? bestTop.rankScore.totalScore : -1;
+
+    if (currentScore > bestScore) {
+      bestFallbackResult = candidateResult;
+    } else if (currentScore === bestScore) {
+      const currentHardReq = currentTop?.rankScore.hardReqPassed ?? false;
+      const bestHardReq = bestTop?.rankScore.hardReqPassed ?? false;
+      if (currentHardReq && !bestHardReq) {
+        bestFallbackResult = candidateResult;
+      }
+    }
+  };
+
   // 1. Primary query search
   if (primaryQuery) {
     const res = await attemptSearch(primaryQuery, 'primary');
-    if (res) return res;
+    if (res) {
+      if (res.recommendedPhoto) return res;
+      updateBestFallback(res);
+    }
   }
 
   // 2. Secondary query search
   if (secondaryQuery && secondaryQuery !== primaryQuery) {
     const res = await attemptSearch(secondaryQuery, 'secondary');
-    if (res) return res;
+    if (res) {
+      if (res.recommendedPhoto) return res;
+      updateBestFallback(res);
+    }
   }
 
   // 3. Simplified primary query (2~3 words)
   const simplifiedPrimary = simplifySearchQuery(primaryQuery);
-  if (simplifiedPrimary && simplifiedPrimary !== primaryQuery) {
+  if (simplifiedPrimary && simplifiedPrimary !== primaryQuery && simplifiedPrimary !== secondaryQuery) {
     const res = await attemptSearch(simplifiedPrimary, 'simplified_primary');
-    if (res) return res;
+    if (res) {
+      if (res.recommendedPhoto) return res;
+      updateBestFallback(res);
+    }
   }
 
   // 4. Simplified secondary query (2~3 words)
   const simplifiedSecondary = simplifySearchQuery(secondaryQuery);
-  if (simplifiedSecondary && simplifiedSecondary !== secondaryQuery && simplifiedSecondary !== simplifiedPrimary) {
+  if (
+    simplifiedSecondary &&
+    simplifiedSecondary !== secondaryQuery &&
+    simplifiedSecondary !== simplifiedPrimary &&
+    simplifiedSecondary !== primaryQuery
+  ) {
     const res = await attemptSearch(simplifiedSecondary, 'simplified_secondary');
-    if (res) return res;
+    if (res) {
+      if (res.recommendedPhoto) return res;
+      updateBestFallback(res);
+    }
   }
 
-  // 5. NO MATCH: No random workspace/cafe images injected
+  // 5. If candidates were found in any stage but none met high-confidence threshold (recommendedPhoto === null)
+  if (bestFallbackResult) {
+    return bestFallbackResult;
+  }
+
+  // 6. NO MATCH: No random workspace/cafe images injected
   return {
     queryUsed: primaryQuery || secondaryQuery || '',
     matchSource: 'no_match',

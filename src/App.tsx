@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio, StoryDirectorAnalysis, StorySlideSuggestion } from './types';
 import { CARD_THEMES } from './data/themes';
 import { INITIAL_SAMPLE_PROJECT } from './data/samplePresets';
-import { getSmartTopicPhoto, extractStockKeywords, buildDynamicStockPhotoUrl } from './utils/photoMatcher';
+import { getSmartTopicPhoto, extractStockKeywords } from './utils/photoMatcher';
 import { processImageBlobToBase64 } from './utils/imageUtils';
 import { Header } from './components/Header';
 import { CardSlideCanvas } from './components/CardSlideCanvas';
@@ -239,7 +239,6 @@ export default function App() {
             const headline = idx === 0 ? `✨ ${request.topic}\n지금 꼭 알아야 할 핵심 포인트` : `${idx}단계: ${request.topic} 핵심 실천 전략`;
             const body = `이 단계에서는 ${cleanTopic}와 관련된 가장 효과적인 실천 방법 및 핵심 지식을 전달합니다.\n2~3문장으로 간결하게 구성하여 모바일에서 한눈에 쏙 들어옵니다.`;
             const keywords = extractStockKeywords({ headline, body, slideNumber: idx + 1 });
-            const photoUrl = buildDynamicStockPhotoUrl(keywords.primary_keyword, idx + 1);
             return {
               id: `slide-${Date.now()}-${idx}`,
               slideNumber: idx + 1,
@@ -253,7 +252,9 @@ export default function App() {
               imageStyleKeywords: ['고화질 포토', '미니멀', '스튜디오 조명'],
               stockPhotoKeywords: keywords,
               suggestedLayout: 'split_top_image',
-              imageUrl: photoUrl,
+              imageUrl: undefined,
+              stockPhotoId: undefined,
+              stockPhotoAttribution: undefined,
             };
           }),
         };
