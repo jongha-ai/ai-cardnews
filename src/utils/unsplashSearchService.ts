@@ -4,6 +4,8 @@
  * photo ID deduplication, and attribution metadata extraction.
  */
 
+import { rankPhotoCandidates } from './candidateRanker';
+
 export interface UnsplashRawPhoto {
   id: string;
   width: number;
@@ -61,14 +63,31 @@ export interface StockSearchRequestParams {
   usedPhotoIds?: string[];
 }
 
+export interface RankedPhotoCandidate {
+  photo: StockCandidatePhoto;
+  rankScore: {
+    totalScore: number;
+    hardReqPassed: boolean;
+    reasons: string[];
+    suitability: '매우 적합' | '적합' | '애매' | '부적합';
+  };
+  originalRank: number;
+}
+
 export interface StockSearchResult {
   queryUsed: string;
   matchSource: 'primary' | 'secondary' | 'simplified_primary' | 'simplified_secondary' | 'no_match';
   totalFound: number;
   candidateCountBeforeFilter: number;
   candidateCountAfterFilter: number;
+  /** Legacy fallback field for backwards compatibility (defaults to recommendedPhoto or first ranked candidate) */
   selectedPhotoCandidate: StockCandidatePhoto | null;
+  /** Raw candidate photos retrieved from Unsplash after deduplication */
   candidatePhotos: StockCandidatePhoto[];
+  /** Relevance-ranked candidates sorted from best to worst with scoring breakdown */
+  rankedCandidates: RankedPhotoCandidate[];
+  /** High-confidence recommendation candidate (strictly populated ONLY when Top 1 score >= 80 AND hardReqPassed === true; otherwise null) */
+  recommendedPhoto: StockCandidatePhoto | null;
 }
 
 /**
@@ -299,14 +318,46 @@ export async function searchStockImageCandidates(
 
       if (filtered.length > 0) {
         const candidates = filtered.map(formatUnsplashCandidate);
+
+        // 1. Rank candidates using Candidate Ranker
+        const ranked = rankPhotoCandidates(candidates, query, {
+          headline: params.headline,
+          body: params.body,
+          slideType: params.slideType,
+          primary_keyword: params.primary_keyword,
+          secondary_keyword: params.secondary_keyword,
+        });
+
+        const rankedCandidates: RankedPhotoCandidate[] = ranked.map((r) => ({
+          photo: r.photo,
+          rankScore: {
+            totalScore: r.rankScore.totalScore,
+            hardReqPassed: r.rankScore.breakdown.hardReqPassed,
+            reasons: r.rankScore.reasons,
+            suitability: r.rankScore.suitability,
+          },
+          originalRank: r.originalRank,
+        }));
+
+        // 2. Compute recommendedPhoto (Score >= 80 && hardReqPassed === true)
+        let recommendedPhoto: StockCandidatePhoto | null = null;
+        if (rankedCandidates.length > 0) {
+          const top1 = rankedCandidates[0];
+          if (top1.rankScore.totalScore >= 80 && top1.rankScore.hardReqPassed) {
+            recommendedPhoto = top1.photo;
+          }
+        }
+
         return {
           queryUsed: query,
           matchSource: source,
           totalFound: total,
           candidateCountBeforeFilter: results.length,
           candidateCountAfterFilter: candidates.length,
-          selectedPhotoCandidate: candidates[0],
+          selectedPhotoCandidate: recommendedPhoto || rankedCandidates[0]?.photo || candidates[0],
           candidatePhotos: candidates,
+          rankedCandidates,
+          recommendedPhoto,
         };
       }
     } catch (err: any) {
@@ -350,5 +401,7 @@ export async function searchStockImageCandidates(
     candidateCountAfterFilter: 0,
     selectedPhotoCandidate: null,
     candidatePhotos: [],
+    rankedCandidates: [],
+    recommendedPhoto: null,
   };
 }
