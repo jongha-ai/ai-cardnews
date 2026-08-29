@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio, StoryDirectorAnalysis } from './types';
+import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio, StoryDirectorAnalysis, StorySlideSuggestion } from './types';
 import { CARD_THEMES } from './data/themes';
 import { INITIAL_SAMPLE_PROJECT } from './data/samplePresets';
 import { getSmartTopicPhoto, extractStockKeywords, buildDynamicStockPhotoUrl } from './utils/photoMatcher';
@@ -81,6 +81,7 @@ export default function App() {
   const [storyAnalysis, setStoryAnalysis] = useState<StoryDirectorAnalysis | null>(null);
   const [isStoryAnalyzing, setIsStoryAnalyzing] = useState<boolean>(false);
   const [storyAnalysisError, setStoryAnalysisError] = useState<string | null>(null);
+  const [storyOriginalSlides, setStoryOriginalSlides] = useState<CardSlide[]>([]);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isRefining, setIsRefining] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'preview' | 'edit'>('preview');
@@ -503,6 +504,10 @@ export default function App() {
     setStoryAnalysisError(null);
     setStoryAnalysis(null);
 
+    // Deep clone current project.slides as immutable snapshot for Before comparison
+    const snapshot: CardSlide[] = JSON.parse(JSON.stringify(project.slides || []));
+    setStoryOriginalSlides(snapshot);
+
     try {
       const requestBody = {
         topic: project.topic || project.title || '',
@@ -542,6 +547,44 @@ export default function App() {
     } finally {
       setIsStoryAnalyzing(false);
     }
+  };
+
+  // Story Director Apply v1: Apply single slide suggestion (strictly updates only 5 text fields)
+  const handleApplySingleStorySlide = (suggestion: StorySlideSuggestion) => {
+    if (!suggestion || !suggestion.id) {
+      console.error('[Story Director Apply] 유효하지 않은 제안 데이터입니다.');
+      return;
+    }
+
+    setProject((prev) => {
+      // 1. Strict 1:1 ID matching against latest prev.slides snapshot
+      const targetSlideIndex = prev.slides.findIndex((s) => s.id === suggestion.id);
+      if (targetSlideIndex === -1) {
+        console.error(`[Story Director Apply] 원본 슬라이드(ID: ${suggestion.id})를 찾을 수 없어 적용을 중단합니다.`);
+        return prev;
+      }
+
+      const originalSlide = prev.slides[targetSlideIndex];
+
+      // 2. Explicitly update ONLY the 5 approved fields, preserving ALL other fields perfectly
+      const updatedSlide: CardSlide = {
+        ...originalSlide,
+        slideType: suggestion.suggestedRole,
+        badgeText: suggestion.badgeText,
+        headline: suggestion.headline,
+        body: suggestion.body,
+        highlightWords: Array.isArray(suggestion.highlightWords) ? suggestion.highlightWords : [],
+      };
+
+      const updatedSlides = [...prev.slides];
+      updatedSlides[targetSlideIndex] = updatedSlide;
+
+      // 3. Update project state with fresh array
+      return {
+        ...prev,
+        slides: updatedSlides,
+      };
+    });
   };
 
   return (
@@ -762,11 +805,13 @@ export default function App() {
       <StoryDirectorModal
         isOpen={isStoryDirectorOpen}
         onClose={() => setIsStoryDirectorOpen(false)}
-        slides={project.slides}
+        originalSlides={storyOriginalSlides}
+        currentSlides={project.slides}
         analysis={storyAnalysis}
         isLoading={isStoryAnalyzing}
         error={storyAnalysisError}
         onRetry={handleAnalyzeStory}
+        onApplySingleSlide={handleApplySingleStorySlide}
       />
 
       {/* 📋 Global Clipboard Image Paste Toast */}

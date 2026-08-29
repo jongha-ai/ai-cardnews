@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CardSlide, StoryDirectorAnalysis, SlideType } from '../types';
+import { CardSlide, StoryDirectorAnalysis, SlideType, StorySlideSuggestion } from '../types';
 import { 
   Sparkles, 
   X, 
@@ -15,17 +15,38 @@ import {
   ChevronUp,
   AlertTriangle,
   RefreshCw,
-  Loader2
+  Loader2,
+  Check
 } from 'lucide-react';
 
 interface StoryDirectorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  slides?: CardSlide[];
+  originalSlides?: CardSlide[];
+  currentSlides?: CardSlide[];
   analysis: StoryDirectorAnalysis | null;
   isLoading: boolean;
   error: string | null;
   onRetry?: () => void;
+  onApplySingleSlide?: (suggestion: StorySlideSuggestion) => void;
+}
+
+// Pure derived state helper: checks if all 5 text fields of suggestion match currentSlide
+export function isSuggestionApplied(currentSlide?: CardSlide, suggestion?: StorySlideSuggestion): boolean {
+  if (!currentSlide || !suggestion) return false;
+
+  const isRoleEqual = currentSlide.slideType === suggestion.suggestedRole;
+  const isBadgeEqual = (currentSlide.badgeText || '') === (suggestion.badgeText || '');
+  const isHeadlineEqual = (currentSlide.headline || '') === (suggestion.headline || '');
+  const isBodyEqual = (currentSlide.body || '') === (suggestion.body || '');
+
+  const origHw = currentSlide.highlightWords || [];
+  const suggHw = suggestion.highlightWords || [];
+  const isHwEqual =
+    origHw.length === suggHw.length &&
+    origHw.every((w, i) => w === suggHw[i]);
+
+  return isRoleEqual && isBadgeEqual && isHeadlineEqual && isBodyEqual && isHwEqual;
 }
 
 // Role styling helper
@@ -43,11 +64,13 @@ const ROLE_BADGES: Record<string, { label: string; bg: string; text: string; bor
 export const StoryDirectorModal: React.FC<StoryDirectorModalProps> = ({
   isOpen,
   onClose,
-  slides = [],
+  originalSlides = [],
+  currentSlides = [],
   analysis,
   isLoading,
   error,
-  onRetry
+  onRetry,
+  onApplySingleSlide
 }) => {
   const [isSummaryExpanded, setIsSummaryExpanded] = useState<boolean>(true);
   const [selectedSlideIds, setSelectedSlideIds] = useState<string[]>([]);
@@ -63,7 +86,7 @@ export const StoryDirectorModal: React.FC<StoryDirectorModalProps> = ({
 
   if (!isOpen) return null;
 
-  const totalSlides = analysis?.suggestions?.length || 0;
+  const totalSlides = analysis?.suggestions?.length || originalSlides.length || currentSlides.length;
 
   const toggleSelectSlide = (id: string) => {
     setSelectedSlideIds((prev) =>
@@ -280,9 +303,13 @@ export const StoryDirectorModal: React.FC<StoryDirectorModalProps> = ({
               {/* Slide Cards Comparison Grid */}
               <div className="space-y-4">
                 {analysis.suggestions.map((suggestion, idx) => {
-                  // Strict 1:1 ID matching from props.slides (NO slides[idx] fallback)
-                  const originalSlide = slides.find((s) => s.id === suggestion.id);
+                  // Strict 1:1 ID matching from originalSlides snapshot for immutable Before display
+                  const originalSlide = (originalSlides || []).find((s) => s.id === suggestion.id);
                   const hasOriginal = Boolean(originalSlide);
+
+                  // Strict 1:1 ID matching from currentSlides for reactive isApplied calculation
+                  const currentSlide = (currentSlides || []).find((s) => s.id === suggestion.id);
+                  const isApplied = isSuggestionApplied(currentSlide, suggestion);
                   
                   const origRoleKey = (originalSlide?.slideType || 'body') as string;
                   const origRole = hasOriginal ? (ROLE_BADGES[origRoleKey] || ROLE_BADGES.body) : null;
@@ -301,6 +328,8 @@ export const StoryDirectorModal: React.FC<StoryDirectorModalProps> = ({
                       className={`bg-slate-950/80 border rounded-xl overflow-hidden transition-all shadow-sm ${
                         !hasOriginal
                           ? 'border-rose-900/40 bg-rose-950/10'
+                          : isApplied
+                          ? 'border-emerald-500/50 ring-1 ring-emerald-500/20 bg-emerald-950/5'
                           : isSelected
                           ? 'border-indigo-500/40 ring-1 ring-indigo-500/20'
                           : 'border-slate-800'
@@ -348,12 +377,49 @@ export const StoryDirectorModal: React.FC<StoryDirectorModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Badge Transition */}
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
-                          <span>뱃지:</span>
-                          <span className="text-slate-300 font-semibold">[{origBadge}]</span>
-                          <ArrowRight className="w-3 h-3 text-slate-500" />
-                          <span className="text-amber-300 font-bold">[{suggestion.badgeText}]</span>
+                        {/* Right Area: Badge Transition & Single Slide Apply Button */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                          {/* Badge Transition */}
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+                            <span>뱃지:</span>
+                            <span className="text-slate-300 font-semibold">[{origBadge}]</span>
+                            <ArrowRight className="w-3 h-3 text-slate-500" />
+                            <span className="text-amber-300 font-bold">[{suggestion.badgeText}]</span>
+                          </div>
+
+                          {/* Single Slide Apply Button */}
+                          {onApplySingleSlide && (
+                            <button
+                              disabled={!hasOriginal || isApplied}
+                              onClick={() => hasOriginal && !isApplied && onApplySingleSlide(suggestion)}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                isApplied
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-default'
+                                  : !hasOriginal
+                                  ? 'bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed'
+                                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm hover:shadow-indigo-500/20 active:scale-95'
+                              }`}
+                              title={
+                                !hasOriginal
+                                  ? '원본 슬라이드가 없어 적용할 수 없습니다.'
+                                  : isApplied
+                                  ? '이미 슬라이드에 적용되었습니다.'
+                                  : '이 슬라이드의 개선된 텍스트만 적용합니다.'
+                              }
+                            >
+                              {isApplied ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>적용됨</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                  <span>이 슬라이드 적용</span>
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
 
