@@ -104,3 +104,33 @@ export interface RefineSlideRequest {
     tone?: string;
   };
 }
+
+export interface StorySlideSuggestion {
+  id: string;
+  slideNumber: number;
+  originalRole: SlideType;
+  suggestedRole: SlideType;
+  badgeText: string;
+  headline: string;
+  body: string;
+  highlightWords: string[];
+  changeReason: string;
+}
+
+export interface StoryDirectorAnalysis {
+  overallSummary: string;
+  duplicateIssues: string[];
+  flowIssues: string[];
+  ctaIssue: string;
+  storyStrategy: string;
+  suggestions: StorySlideSuggestion[];
+}
+
+export interface StoryDirectorRequest {
+  topic: string;
+  purpose?: string;
+  targetAudience?: string;
+  tone?: string;
+  slides: CardSlide[];
+}
+
