@@ -15,6 +15,7 @@ import { SlideEditorSidebar } from './components/SlideEditorSidebar';
 import { SlideThumbnailList } from './components/SlideThumbnailList';
 import { TopicGeneratorModal } from './components/TopicGeneratorModal';
 import { ExportModal } from './components/ExportModal';
+import { StoryDirectorModal } from './components/StoryDirectorModal';
 import { AllSlidesGridView } from './components/AllSlidesGridView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import confetti from 'canvas-confetti';
@@ -76,6 +77,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'focus' | 'grid'>('focus');
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [isStoryDirectorOpen, setIsStoryDirectorOpen] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isRefining, setIsRefining] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'preview' | 'edit'>('preview');
@@ -501,6 +503,7 @@ export default function App() {
         onUpdateProject={handleUpdateProject}
         onOpenNewModal={() => setIsNewModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenStoryDirector={() => setIsStoryDirectorOpen(true)}
       />
 
       {/* Main Workspace Area */}
@@ -702,6 +705,13 @@ export default function App() {
         project={project}
         theme={currentTheme}
         activeSlideIndex={currentSlideIndex}
+      />
+
+      {/* Story Director Modal */}
+      <StoryDirectorModal
+        isOpen={isStoryDirectorOpen}
+        onClose={() => setIsStoryDirectorOpen(false)}
+        slides={project.slides}
       />
 
       {/* 📋 Global Clipboard Image Paste Toast */}
