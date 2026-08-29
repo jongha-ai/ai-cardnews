@@ -1097,6 +1097,41 @@ app.post(["/api/stock-image-search", "/stock-image-search"], async (req: Request
   }
 });
 
+// Unsplash Download Tracking API (records download event on Unsplash when user selects photo)
+app.post(["/api/unsplash-track-download", "/unsplash-track-download"], async (req: Request, res: Response) => {
+  const accessKey = process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_KEY;
+  if (!accessKey || accessKey.trim() === '') {
+    return res.status(500).json({ error: 'UNSPLASH_ACCESS_KEY is not configured.' });
+  }
+
+  try {
+    const { photoId } = req.body || {};
+
+    // Strictly validate photoId format (alphanumeric, dashes, underscores)
+    if (!photoId || typeof photoId !== 'string' || !/^[\w-]{1,64}$/.test(photoId)) {
+      return res.status(400).json({ error: 'Valid photoId is required.' });
+    }
+
+    const targetUrl = `https://api.unsplash.com/photos/${encodeURIComponent(photoId)}/download`;
+
+    const response = await fetch(targetUrl, {
+      headers: {
+        Authorization: `Client-ID ${accessKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      console.warn(`[Unsplash Tracking] Upstream download tracking failed for photo ${photoId} with status ${response.status}`);
+      return res.status(502).json({ error: 'Upstream Unsplash download tracking failed', success: false });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error: any) {
+    console.error('[Unsplash Tracking] Error:', error.message);
+    return res.status(500).json({ error: 'Failed to track download.' });
+  }
+});
+
 // Vite dev & production static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

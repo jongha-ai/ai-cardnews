@@ -142,6 +142,8 @@ export default function App() {
             updatedSlides[targetIdx] = {
               ...updatedSlides[targetIdx],
               imageUrl: base64Url,
+              stockPhotoId: undefined,
+              stockPhotoAttribution: undefined,
             };
             return { ...prev, slides: updatedSlides };
           });
@@ -166,6 +168,8 @@ export default function App() {
               updatedSlides[targetIdx] = {
                 ...updatedSlides[targetIdx],
                 imageUrl: base64Url,
+                stockPhotoId: undefined,
+                stockPhotoAttribution: undefined,
               };
               return { ...prev, slides: updatedSlides };
             });
@@ -390,7 +394,13 @@ export default function App() {
         ...prev,
         slides: prev.slides.map((s) =>
           s.id === slideId
-            ? { ...s, imageUrl: data.imageUrl, isGeneratingImage: false }
+            ? {
+                ...s,
+                imageUrl: data.imageUrl,
+                isGeneratingImage: false,
+                stockPhotoId: undefined,
+                stockPhotoAttribution: undefined,
+              }
             : s
         ),
       }));
@@ -752,6 +762,8 @@ export default function App() {
                   slide={currentSlide}
                   theme={currentTheme}
                   totalSlides={project.slides.length}
+                  allSlides={project.slides}
+                  projectAspectRatio={project.aspectRatio}
                   projectHeadlineFont={project.headlineFont}
                   projectBodyFont={project.bodyFont}
                   onUpdateSlide={handleUpdateSlide}

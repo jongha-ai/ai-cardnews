@@ -41,6 +41,14 @@ export interface StockPhotoKeywords {
   secondary_keyword: string;
 }
 
+export interface StockPhotoAttribution {
+  photographerName: string;
+  photographerUsername: string;
+  profileUrl: string;
+  unsplashUrl: string;
+  downloadLocation?: string;
+}
+
 export interface CardSlide {
   id: string;
   slideNumber: number;
@@ -54,6 +62,8 @@ export interface CardSlide {
   imageStyleKeywords: string[];
   suggestedLayout: SlideLayout;
   imageUrl?: string;
+  stockPhotoId?: string;
+  stockPhotoAttribution?: StockPhotoAttribution;
   stockPhotoKeywords?: StockPhotoKeywords;
   imageFit?: 'cover' | 'contain';
   imagePosition?: 'top' | 'center' | 'bottom';
