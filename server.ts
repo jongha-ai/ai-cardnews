@@ -3,6 +3,7 @@ import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config();
 
 const app = express();
@@ -41,7 +42,7 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
-// Resilient Gemini generateContent helper with automatic model fallback
+// Resilient Gemini generateContent helper with automatic model fallback and 429 backoff
 async function generateContentWithFallback(
   ai: GoogleGenAI,
   params: {
@@ -52,37 +53,34 @@ async function generateContentWithFallback(
 ): Promise<any> {
   const candidateModels = params.models || [
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
   ];
 
   let lastError: any = null;
 
   for (const modelName of candidateModels) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: params.contents,
-        config: params.config,
-      });
-      return response;
-    } catch (err: any) {
-      lastError = err;
-      const isUnavailableOrRateLimited =
-        err?.status === 503 ||
-        err?.status === 429 ||
-        err?.message?.includes("503") ||
-        err?.message?.includes("429") ||
-        err?.message?.includes("high demand") ||
-        err?.message?.includes("UNAVAILABLE") ||
-        err?.message?.includes("RESOURCE_EXHAUSTED");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: params.contents,
+          config: params.config,
+        });
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const is429 =
+          err?.status === 429 ||
+          err?.message?.includes("429") ||
+          err?.message?.includes("RESOURCE_EXHAUSTED");
 
-      if (isUnavailableOrRateLimited) {
-        console.warn(`Model ${modelName} unavailable or rate-limited (${err.message}). Trying next fallback model...`);
-        continue;
+        if (is429 && attempt < 2) {
+          console.warn(`Model ${modelName} 429 rate limited. Retrying in 6s (attempt ${attempt + 1}/3)...`);
+          await new Promise((r) => setTimeout(r, 6000));
+          continue;
+        }
+        console.warn(`Model ${modelName} call failed:`, err?.message || err);
+        break;
       }
-      console.warn(`Model ${modelName} call failed: ${err.message}. Retrying with next model...`);
     }
   }
 
@@ -200,17 +198,38 @@ app.post(["/api/generate-cardnews", "/generate-cardnews"], async (req: Request, 
 - 스타일 및 비율: '자연스러운 표정과 조명, 고화질 실사 사진, ${aspectRatio === '4:5' ? '4:5' : aspectRatio === '9:16' ? '9:16' : '1:1'} 비율'을 문장 끝에 명시하세요.
 - 작성 예시: "따뜻한 원목 인테리어의 카페에서 노트북으로 SNS 마케팅 홍보 문구를 작성 중인 한국인 사장님, 자연스러운 표정과 조명, 고화질 실사 사진, ${aspectRatio === '4:5' ? '4:5' : aspectRatio === '9:16' ? '9:16' : '1:1'} 비율"
 
-[3. Unsplash 스톡 사진 검색 키워드(stockPhotoKeywords) 추출 규칙 - 테마/카테고리명 배제 & 본문 직접 매칭]
-각 슬라이드의 헤드라인과 본문(Headline + Body)의 구체적 행위/대상(인물, 매장, 스마트폰, 포스터 등)만을 바탕으로 Unsplash 검색 키워드를 생성합니다:
-1) 테마/카테고리 기반 추상 키워드 절대 금지: 'technology', 'tech', 'ai', 'abstract', 'code', 'chip', 'circuit', '3d' 등 추상적 테크 단어는 일체 생성하지 마세요. (테크/AI 주제라도 실제 사람이 일하거나 소통하는 물리적 장면을 묘사)
-2) 본문 내용 기반 구체적 물리적 실체 매핑:
-   - "홍보물/포스터/배너/카드뉴스/광고/템플릿 제작" -> 'poster design creative desk', 'store flyer marketing'
-   - "고객 응대/상담/챗봇/메시지/카톡/문의" -> 'friendly customer service mobile chat', 'smartphone messaging chat app'
-   - "매출 성장/실전 전략/매장/가게/소상공인/점주" -> 'happy small business owner cafe', 'retail store checkout counter'
-   - "숏폼/릴스/영상 제작/촬영/편집/유튜브" -> 'creator ring light filming setup', 'editing video smartphone screen'
-   - "오디오/음악/로고송/목소리/팟캐스트" -> 'audio wave headphones desk', 'podcast microphone studio'
-   - "데이터/대시보드/성과/분석/차트" -> 'business dashboard tablet screen', 'financial analytics charts graph'
-3) 반드시 [대상/공간] + [구체적 행동/객체] + [무드]가 결합된 2~4단어 순수 영문 소문자 구(Phrase)로 primary_keyword와 secondary_keyword를 반환하세요.
+[3. Unsplash 스톡 사진 검색 키워드(stockPhotoKeywords) 생성 가이드라인 - Physical Scene & Camera Realism Enforced]
+Unsplash에서 실제 고화질 실사 사진으로 촬영되어 검색 가능한 3~7단어 영문 소문자 구(Phrase)로 primary_keyword와 secondary_keyword를 생성하세요.
+
+1) 📸 Stock Photo Realism (카메라 촬영 가능성 원칙):
+   - 검색어를 결정하기 전 반드시 자문하세요: "전문 사진작가가 카메라 렌즈로 이 물리적 장면을 직접 촬영할 수 있는가? (Can a photographer physically photograph this exact scene?)"
+   - NO라면 카메라로 촬영 가능한 물리적 인물/실물/공간/행동 장면으로 즉시 변환하세요.
+   - 추상적 개념 단어 단독 사용 절대 금지: 'productivity', 'energy savings', 'digital transformation', 'business growth', 'efficiency', 'marketing success', 'technology', 'tech', 'ai', 'abstract', 'code', 'chip', 'circuit', '3d' 등.
+
+2) 🏗️ Physical Scene 필수 구조 패턴 (아래 4대 구조 중 택 1):
+   - [구조 A] ACTOR + ACTION + OBJECT (예: "person cleaning air conditioner filter", "baker organizing fresh bread on shelf")
+   - [구조 B] ACTOR + ACTION + PLACE (예: "office worker stretching neck at desk", "student studying with laptop in cafe")
+   - [구조 C] OBJECT + ACTION/STATE (예: "hand unplugging power strip from wall", "freshly baked croissants on wooden tray")
+   - [구조 D] ACTOR + OBJECT + PLACE (예: "shop owner checking refrigerator in store", "freelancer writing planner in home office")
+
+3) 💻 디지털 도구 / 소프트웨어 / 브랜드명 변환 규칙:
+   - Notion, ChatGPT, iPad, Goodnotes, CRM, SaaS 등 스톡사진에서 직접 찾기 어려운 디지털 개념은 브랜드명을 억지로 검색하지 말고 실제 물리적 사용 장면으로 변환하세요.
+     - "노션 템플릿/생산성 루틴" -> "person planning tasks on laptop desk", "clean workspace with laptop and notebook"
+     - "아이패드/굿노트 다이어리" -> "person writing with stylus on tablet desk", "hands journaling on digital tablet"
+     - "마케팅 자동화/대시보드" -> "business person analyzing charts on laptop", "tablet screen with analytics graph"
+   - 주의: 디지털 주제에 대해 'poster design creative desk', 'store flyer marketing' 같은 엉뚱한 인쇄물/포스터 키워드를 자동 매핑하지 마세요.
+
+4) 🏃‍♂️ Action(행동) 우선 반영 규칙:
+   - 슬라이드 본문에 구체적인 행동(청소, 스트레칭, 플러그 뽑기, 점검, 글쓰기, 조리 등)이 언급되어 있다면 단순 장소('cafe', 'office')만 검색하지 말고 반드시 그 행동('cleaning filter', 'stretching at desk', 'unplugging cable')을 검색어에 포함하세요.
+
+5) 🎯 Primary vs Secondary 역할 분리:
+   - primary_keyword: 가장 구체적인 실제 장면 (3~7단어, 예: "office worker stretching neck at desk")
+   - secondary_keyword: 동일한 의미와 대상을 유지하되 Unsplash 검색 성공률을 높인 정제/단순화된 장면 (3~5단어, 예: "person doing desk stretch")
+   - 주의: Secondary가 Primary와 전혀 다른 이질적인 장면(예: Primary가 에어컨 청소인데 Secondary가 카페 인테리어)이 되어서는 절대 안 됩니다.
+
+6) 📏 형식 규칙:
+   - 3~7개 영문 소문자 단어로 구성.
+   - 해시태그(#), 특수문자, 마케팅 카피 문장, 마침표 일체 금지.
 
 [4. 인스타그램 4단 고전환 캡션(caption) 생성 가이드라인 - 도달률 & 저장 전환 극대화]
 인스타그램 업로드 시 도달률(SEO), 체류 시간, 저장/공유 전환율을 극대화할 수 있도록 아래 4대 필수 구조를 엄격히 지켜 완성된 한국어 캡션(caption) 텍스트를 작성하세요:

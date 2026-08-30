@@ -283,7 +283,7 @@ export function evaluateCandidatePhoto(
     placeScore = 10;
   }
 
-  // 5. Hard Negative / Core Anchor Validation
+  // 5. Hard Negative / Core Anchor & Context-Aware Validation
   const coreObjects = requirements.coreObjects || [];
   const coreActors = requirements.coreActors || [];
   const hasCoreExpectation = coreObjects.length > 0 || coreActors.length > 0;
@@ -301,6 +301,141 @@ export function evaluateCandidatePhoto(
   } else if (hasCoreExpectation && matchedCoreCount === 0) {
     hardReqPassed = false;
     reasons.push(`Hard Negative: 핵심 Entity [${[...coreObjects, ...coreActors].join('/')}] 0개 일치 (Cap 50)`);
+  }
+
+  // 5-A. Artifact Class Protection with Explicit Intent Exceptions
+  const queryTokens = extractWordTokens(originalQuery);
+  interface ArtifactClass {
+    name: string;
+    candidateIndicators: string[];
+    queryIntentTokens: string[];
+  }
+
+  const ARTIFACT_CLASSES: ArtifactClass[] = [
+    {
+      name: '3D Render / Model / CGI',
+      candidateIndicators: [
+        '3d render', '3d model', '3d character', '3d illustration', 'cgi render', 'digital render',
+        'blender render', '3d'
+      ],
+      queryIntentTokens: [
+        '3d', 'render', 'cgi', 'blender', 'digital render', '3d character', '3d model', '3d render'
+      ]
+    },
+    {
+      name: 'Statue / Sculpture',
+      candidateIndicators: [
+        'statue', 'sculpture', 'sculptures', 'monument', 'monuments', 'figurine', 'figurines',
+        'ceramic figure', 'wax figure', 'clay model', 'toy figure'
+      ],
+      queryIntentTokens: [
+        'statue', 'sculpture', 'monument', 'sculptures', 'monuments', 'figurine', 'museum',
+        'art gallery', 'exhibition', 'ancient'
+      ]
+    },
+    {
+      name: 'Mannequin / Dummy',
+      candidateIndicators: [
+        'mannequin', 'dummy', 'mannequins', 'tailor dummy', 'dress form', 'wax dummy'
+      ],
+      queryIntentTokens: [
+        'mannequin', 'dummy', 'mannequins', 'tailor', 'boutique', 'fashion display', 'dressmaker'
+      ]
+    },
+    {
+      name: 'Illustration / Vector / Drawing',
+      candidateIndicators: [
+        'illustration', 'vector', 'drawing', 'sketch', 'clipart', 'cartoon', 'digital art', 'paint rendering'
+      ],
+      queryIntentTokens: [
+        'illustration', 'vector', 'drawing', 'sketch', 'cartoon', 'digital art', 'graphic design', 'clipart'
+      ]
+    }
+  ];
+
+  for (const artClass of ARTIFACT_CLASSES) {
+    const isCandidateArtifact = matchesExactKeyword(photoTokens, rawText, artClass.candidateIndicators);
+    if (isCandidateArtifact) {
+      const hasIntentInQuery = artClass.queryIntentTokens.some((it) => matchesExactKeyword(queryTokens, originalQuery, [it]));
+      if (!hasIntentInQuery) {
+        hardReqPassed = false;
+        reasons.push(`Hard Negative: 비실사 인공물/3D/일러스트 불일치 (${artClass.name} vs photo) (Cap 50)`);
+        break;
+      }
+    }
+  }
+
+  // 5-A-2. Human Subject vs General Non-Human Artifact Guardrail
+  const HUMAN_INTENT_TOKENS = new Set([
+    'person', 'people', 'student', 'students', 'teacher', 'children', 'teenager', 'barista',
+    'owner', 'professional', 'family', 'man', 'woman', 'worker', 'human', 'chef', 'stylist',
+    'child', 'user', 'someone', 'freelancer', 'employee', 'customer', 'baker', 'author', 'doctor'
+  ]);
+  const ARTIFACT_EXCLUSIONS = new Set([
+    'statue', 'sculpture', 'monument', 'mannequin', 'dummy', 'figurine', 'toy', 'doll',
+    'robot', '3d', 'render', 'illustration', 'drawing', 'art', 'museum', 'ceramic', 'wax'
+  ]);
+  const ARTIFACT_CANDIDATE_INDICATORS = [
+    'statue', 'sculpture', 'mannequin', 'dummy', 'figurine', '3d render', '3d model',
+    'illustration', 'vector', 'drawing', 'figurines', 'toy figure', 'ceramic figure',
+    'wax figure', 'clay model', 'sculptures', 'monument'
+  ];
+
+  let hasHumanIntent = false;
+  let hasArtifactExclusionInQuery = false;
+  for (const qt of queryTokens) {
+    if (HUMAN_INTENT_TOKENS.has(qt)) hasHumanIntent = true;
+    if (ARTIFACT_EXCLUSIONS.has(qt)) hasArtifactExclusionInQuery = true;
+  }
+
+  if (hasHumanIntent && !hasArtifactExclusionInQuery) {
+    if (matchesExactKeyword(photoTokens, rawText, ARTIFACT_CANDIDATE_INDICATORS)) {
+      hardReqPassed = false;
+      if (!reasons.some((r) => r.includes('비실사 인공물'))) {
+        reasons.push('Hard Negative: 비실사 인공물/조각상/3D 불일치 (Cap 50)');
+      }
+    }
+  }
+
+  // 5-B. Context-Aware Place / Environment Conflict
+  interface EnvironmentCluster {
+    name: string;
+    queryTokens: string[];
+    conflictTokens: string[];
+  }
+  const ENVIRONMENT_CLUSTERS: EnvironmentCluster[] = [
+    {
+      name: 'office/workplace',
+      queryTokens: ['office', 'desk', 'workplace', 'cubicle', 'workstation', 'boardroom', 'coworking', 'ergonomic'],
+      conflictTokens: ['beach', 'sand', 'seashore', 'ocean', 'seaside', 'coast', 'camping', 'campground', 'tent', 'swimming pool', 'picnic']
+    },
+    {
+      name: 'store/bakery/shop',
+      queryTokens: ['bakery', 'shop', 'store', 'cafe', 'counter', 'supermarket', 'retail', 'boutique', 'restaurant'],
+      conflictTokens: ['bedroom', 'bed', 'beach', 'sand', 'forest', 'jungle', 'mountain', 'hiking', 'campsite']
+    },
+    {
+      name: 'kitchen/indoor cooking',
+      queryTokens: ['kitchen', 'pantry', 'oven', 'stove', 'refrigerator', 'fridge'],
+      conflictTokens: ['beach', 'sand', 'ocean', 'forest', 'mountain', 'campground']
+    },
+    {
+      name: 'bedroom/bed',
+      queryTokens: ['bedroom', 'bed', 'pajamas', 'sleeping'],
+      conflictTokens: ['office', 'cubicle', 'boardroom', 'supermarket', 'beach', 'sand']
+    }
+  ];
+
+  for (const cluster of ENVIRONMENT_CLUSTERS) {
+    const hasClusterInQuery = cluster.queryTokens.some((qt) => queryTokens.has(qt));
+    const hasConflictInQuery = cluster.conflictTokens.some((ct) => queryTokens.has(ct));
+    if (hasClusterInQuery && !hasConflictInQuery) {
+      if (matchesExactKeyword(photoTokens, rawText, cluster.conflictTokens)) {
+        hardReqPassed = false;
+        reasons.push(`Hard Negative: 장소/환경 문맥 불일치 (${cluster.name} vs photo conflict) (Cap 50)`);
+        break;
+      }
+    }
   }
 
   // 6. Avoid keyword penalty
