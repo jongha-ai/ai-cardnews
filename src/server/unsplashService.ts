@@ -99,12 +99,23 @@ export async function enrichSlidesWithRankedStockPhotos(
     }));
   }
 
-  const usedPhotoIds: string[] = [];
+  const usedPhotoIds: string[] = slides
+    .map((s) => s.stockPhotoId)
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
   const enrichedSlides: CardSlide[] = [];
 
   for (let idx = 0; idx < slides.length; idx++) {
     const slide = slides[idx];
     const slideId = slide.id || `slide-${Date.now()}-${idx}`;
+
+    // If slide already has a pre-assigned stock photo and image URL, preserve it as-is
+    if (slide.imageUrl && slide.stockPhotoId && typeof slide.stockPhotoId === 'string' && slide.stockPhotoId.trim()) {
+      enrichedSlides.push({
+        ...slide,
+        id: slideId,
+      });
+      continue;
+    }
 
     try {
       const searchResult = await searchStockImageCandidates(

@@ -301,7 +301,11 @@ export async function searchStockImageCandidates(
   }
 
   const orientation = getOrientationFromAspectRatio(params.aspectRatio);
-  const usedIdSet = new Set<string>(params.usedPhotoIds || []);
+  const usedIdSet = new Set<string>(
+    (params.usedPhotoIds || [])
+      .map((id) => (typeof id === 'string' ? id.trim() : ''))
+      .filter(Boolean)
+  );
 
   const primaryQuery = sanitizeSearchQuery(params.primary_keyword);
   const secondaryQuery = sanitizeSearchQuery(params.secondary_keyword);
