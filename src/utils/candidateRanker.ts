@@ -303,8 +303,69 @@ export function evaluateCandidatePhoto(
     reasons.push(`Hard Negative: 핵심 Entity [${[...coreObjects, ...coreActors].join('/')}] 0개 일치 (Cap 50)`);
   }
 
-  // 5-A. Human Subject vs Non-Human Artifact Conflict
+  // 5-A. Artifact Class Protection with Explicit Intent Exceptions
   const queryTokens = extractWordTokens(originalQuery);
+  interface ArtifactClass {
+    name: string;
+    candidateIndicators: string[];
+    queryIntentTokens: string[];
+  }
+
+  const ARTIFACT_CLASSES: ArtifactClass[] = [
+    {
+      name: '3D Render / Model / CGI',
+      candidateIndicators: [
+        '3d render', '3d model', '3d character', '3d illustration', 'cgi render', 'digital render',
+        'blender render', '3d'
+      ],
+      queryIntentTokens: [
+        '3d', 'render', 'cgi', 'blender', 'digital render', '3d character', '3d model', '3d render'
+      ]
+    },
+    {
+      name: 'Statue / Sculpture',
+      candidateIndicators: [
+        'statue', 'sculpture', 'sculptures', 'monument', 'monuments', 'figurine', 'figurines',
+        'ceramic figure', 'wax figure', 'clay model', 'toy figure'
+      ],
+      queryIntentTokens: [
+        'statue', 'sculpture', 'monument', 'sculptures', 'monuments', 'figurine', 'museum',
+        'art gallery', 'exhibition', 'ancient'
+      ]
+    },
+    {
+      name: 'Mannequin / Dummy',
+      candidateIndicators: [
+        'mannequin', 'dummy', 'mannequins', 'tailor dummy', 'dress form', 'wax dummy'
+      ],
+      queryIntentTokens: [
+        'mannequin', 'dummy', 'mannequins', 'tailor', 'boutique', 'fashion display', 'dressmaker'
+      ]
+    },
+    {
+      name: 'Illustration / Vector / Drawing',
+      candidateIndicators: [
+        'illustration', 'vector', 'drawing', 'sketch', 'clipart', 'cartoon', 'digital art', 'paint rendering'
+      ],
+      queryIntentTokens: [
+        'illustration', 'vector', 'drawing', 'sketch', 'cartoon', 'digital art', 'graphic design', 'clipart'
+      ]
+    }
+  ];
+
+  for (const artClass of ARTIFACT_CLASSES) {
+    const isCandidateArtifact = matchesExactKeyword(photoTokens, rawText, artClass.candidateIndicators);
+    if (isCandidateArtifact) {
+      const hasIntentInQuery = artClass.queryIntentTokens.some((it) => matchesExactKeyword(queryTokens, originalQuery, [it]));
+      if (!hasIntentInQuery) {
+        hardReqPassed = false;
+        reasons.push(`Hard Negative: 비실사 인공물/3D/일러스트 불일치 (${artClass.name} vs photo) (Cap 50)`);
+        break;
+      }
+    }
+  }
+
+  // 5-A-2. Human Subject vs General Non-Human Artifact Guardrail
   const HUMAN_INTENT_TOKENS = new Set([
     'person', 'people', 'student', 'students', 'teacher', 'children', 'teenager', 'barista',
     'owner', 'professional', 'family', 'man', 'woman', 'worker', 'human', 'chef', 'stylist',
@@ -330,7 +391,9 @@ export function evaluateCandidatePhoto(
   if (hasHumanIntent && !hasArtifactExclusionInQuery) {
     if (matchesExactKeyword(photoTokens, rawText, ARTIFACT_CANDIDATE_INDICATORS)) {
       hardReqPassed = false;
-      reasons.push('Hard Negative: 비실사 인공물/조각상/3D 불일치 (Cap 50)');
+      if (!reasons.some((r) => r.includes('비실사 인공물'))) {
+        reasons.push('Hard Negative: 비실사 인공물/조각상/3D 불일치 (Cap 50)');
+      }
     }
   }
 
