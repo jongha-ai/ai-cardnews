@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio, StoryDirectorAnalysis, StorySlideSuggestion } from './types';
 import { CARD_THEMES } from './data/themes';
 import { INITIAL_SAMPLE_PROJECT } from './data/samplePresets';
-import { getSmartTopicPhoto, extractStockKeywords } from './utils/photoMatcher';
+import { getSmartTopicPhoto } from './utils/photoMatcher';
 import { processImageBlobToBase64 } from './utils/imageUtils';
 import { Header } from './components/Header';
 import { CardSlideCanvas } from './components/CardSlideCanvas';
@@ -203,61 +203,29 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentSlideIndex, project.slides.length]);
 
-  // Generate Card News via API (with resilient client-side fallback)
+  // Generate Card News via API with explicit error handling
   const handleGenerateCardNews = async (request: GenerateCardNewsRequest) => {
     try {
       setIsGenerating(true);
-      let data: any = null;
 
-      try {
-        const res = await fetch('/api/generate-cardnews', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request),
-        });
+      const res = await fetch('/api/generate-cardnews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
 
-        if (res.ok) {
-          data = await res.json();
-        } else {
-          console.warn('API returned non-200 status:', res.status);
-        }
-      } catch (fetchErr) {
-        console.warn('Network error calling /api/generate-cardnews:', fetchErr);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        const errorMessage = errorData?.message || `카드뉴스 생성에 실패했습니다 (상태 코드: ${res.status}). 잠시 후 다시 시도해주세요.`;
+        alert(errorMessage);
+        return;
       }
 
-      // If backend API returned no slides or failed, construct high-quality instant fallback
-      if (!data || !data.slides || data.slides.length === 0) {
-        const count = Number(request.slideCount) || 5;
-        const cleanTopic = request.topic.replace(/[^\w\s가-힣]/g, '').trim() || request.topic;
-        data = {
-          title: `${request.topic} 핵심 가이드`,
-          subTitle: request.purpose || `누구나 쉽게 이해하고 바로 실천하는 ${cleanTopic} 실전 팁`,
-          category: request.themeId || 'TREND',
-          tags: ['#카드뉴스', `#${cleanTopic.replace(/\s+/g, '')}`, '#실전팁', '#인사이트'],
-          caption: `${cleanTopic}, 아직도 혼자 고민하며 시간 낭비하고 계셨나요? ⏳\n\n바쁜 분들을 위한 ${count}단계 핵심 실천 가이드를 정리했습니다!\n━━━━━━━━━━━━━━━\n1️⃣ 기본 원리 점검\n👉 문제의 원인을 먼저 파악하고 불필요한 시행착오를 줄이세요.\n\n2️⃣ 실전 적용 노하우\n👉 단계별 체크리스트를 따라 매일 10분씩 작은 습관으로 만드세요.\n\n3️⃣ 지속 가능한 시스템 구축\n👉 한 번의 실행으로 끝나지 않도록 자동화 루틴을 완성하세요.\n━━━━━━━━━━━━━━━\n💡 핵심은 '즉시 실행'입니다.\n\n📌 나중에 다시 보며 적용하려면 지금 [저장]해두세요!\n💬 주변에 꼭 필요한 분들께 [공유]로 알려주세요!\n\n#${cleanTopic.replace(/\s+/g, '')} #카드뉴스 #실전팁 #성장루틴`,
-          slides: Array.from({ length: count }).map((_, idx) => {
-            const headline = idx === 0 ? `✨ ${request.topic}\n지금 꼭 알아야 할 핵심 포인트` : `${idx}단계: ${request.topic} 핵심 실천 전략`;
-            const body = `이 단계에서는 ${cleanTopic}와 관련된 가장 효과적인 실천 방법 및 핵심 지식을 전달합니다.\n2~3문장으로 간결하게 구성하여 모바일에서 한눈에 쏙 들어옵니다.`;
-            const keywords = extractStockKeywords({ headline, body, slideNumber: idx + 1 });
-            return {
-              id: `slide-${Date.now()}-${idx}`,
-              slideNumber: idx + 1,
-              slideType: idx === 0 ? 'cover' : idx === count - 1 ? 'cta' : 'body',
-              badgeText: idx === 0 ? 'GUIDE' : `POINT 0${idx}`,
-              headline,
-              body,
-              highlightWords: [cleanTopic, '핵심 포인트'],
-              imagePrompt: `밝고 정돈된 국내 비즈니스 공간에서 ${cleanTopic} 핵심 전략을 점검 중인 30대 한국인 직장인, 자연스러운 표정과 부드러운 채광, 고화질 실사 사진, ${request.aspectRatio || '1:1'} 비율`,
-              imagePromptKorean: `${cleanTopic}의 핵심 메시지를 담은 세련된 한국형 고화질 비주얼`,
-              imageStyleKeywords: ['고화질 포토', '미니멀', '스튜디오 조명'],
-              stockPhotoKeywords: keywords,
-              suggestedLayout: 'split_top_image',
-              imageUrl: undefined,
-              stockPhotoId: undefined,
-              stockPhotoAttribution: undefined,
-            };
-          }),
-        };
+      const data = await res.json();
+
+      if (!data || !Array.isArray(data.slides) || data.slides.length === 0) {
+        alert('카드뉴스 슬라이드 데이터를 받지 못했습니다. 다시 시도해주세요.');
+        return;
       }
 
       const newProject: CardNewsProject = {
@@ -282,8 +250,8 @@ export default function App() {
       setViewMode('focus');
       confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
     } catch (err: any) {
-      console.error('Generation failed:', err);
-      alert(err.message || '카드뉴스 생성 중 문제가 발생했습니다.');
+      console.error('Generation network/client error:', err);
+      alert('네트워크 연결 또는 서버 통신 중 오류가 발생했습니다. 다시 시도해주세요.');
     } finally {
       setIsGenerating(false);
     }
