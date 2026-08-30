@@ -4,10 +4,10 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio } from './types';
+import { CardNewsProject, CardSlide, GenerateCardNewsRequest, CardThemeId, AspectRatio, StoryDirectorAnalysis, StorySlideSuggestion } from './types';
 import { CARD_THEMES } from './data/themes';
 import { INITIAL_SAMPLE_PROJECT } from './data/samplePresets';
-import { getSmartTopicPhoto, extractStockKeywords, buildDynamicStockPhotoUrl } from './utils/photoMatcher';
+import { getSmartTopicPhoto, extractStockKeywords } from './utils/photoMatcher';
 import { processImageBlobToBase64 } from './utils/imageUtils';
 import { Header } from './components/Header';
 import { CardSlideCanvas } from './components/CardSlideCanvas';
@@ -15,6 +15,7 @@ import { SlideEditorSidebar } from './components/SlideEditorSidebar';
 import { SlideThumbnailList } from './components/SlideThumbnailList';
 import { TopicGeneratorModal } from './components/TopicGeneratorModal';
 import { ExportModal } from './components/ExportModal';
+import { StoryDirectorModal } from './components/StoryDirectorModal';
 import { AllSlidesGridView } from './components/AllSlidesGridView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import confetti from 'canvas-confetti';
@@ -76,6 +77,11 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'focus' | 'grid'>('focus');
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [isStoryDirectorOpen, setIsStoryDirectorOpen] = useState<boolean>(false);
+  const [storyAnalysis, setStoryAnalysis] = useState<StoryDirectorAnalysis | null>(null);
+  const [isStoryAnalyzing, setIsStoryAnalyzing] = useState<boolean>(false);
+  const [storyAnalysisError, setStoryAnalysisError] = useState<string | null>(null);
+  const [storyOriginalSlides, setStoryOriginalSlides] = useState<CardSlide[]>([]);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isRefining, setIsRefining] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'preview' | 'edit'>('preview');
@@ -136,6 +142,8 @@ export default function App() {
             updatedSlides[targetIdx] = {
               ...updatedSlides[targetIdx],
               imageUrl: base64Url,
+              stockPhotoId: undefined,
+              stockPhotoAttribution: undefined,
             };
             return { ...prev, slides: updatedSlides };
           });
@@ -160,6 +168,8 @@ export default function App() {
               updatedSlides[targetIdx] = {
                 ...updatedSlides[targetIdx],
                 imageUrl: base64Url,
+                stockPhotoId: undefined,
+                stockPhotoAttribution: undefined,
               };
               return { ...prev, slides: updatedSlides };
             });
@@ -229,7 +239,6 @@ export default function App() {
             const headline = idx === 0 ? `✨ ${request.topic}\n지금 꼭 알아야 할 핵심 포인트` : `${idx}단계: ${request.topic} 핵심 실천 전략`;
             const body = `이 단계에서는 ${cleanTopic}와 관련된 가장 효과적인 실천 방법 및 핵심 지식을 전달합니다.\n2~3문장으로 간결하게 구성하여 모바일에서 한눈에 쏙 들어옵니다.`;
             const keywords = extractStockKeywords({ headline, body, slideNumber: idx + 1 });
-            const photoUrl = buildDynamicStockPhotoUrl(keywords.primary_keyword, idx + 1);
             return {
               id: `slide-${Date.now()}-${idx}`,
               slideNumber: idx + 1,
@@ -243,7 +252,9 @@ export default function App() {
               imageStyleKeywords: ['고화질 포토', '미니멀', '스튜디오 조명'],
               stockPhotoKeywords: keywords,
               suggestedLayout: 'split_top_image',
-              imageUrl: photoUrl,
+              imageUrl: undefined,
+              stockPhotoId: undefined,
+              stockPhotoAttribution: undefined,
             };
           }),
         };
@@ -384,7 +395,13 @@ export default function App() {
         ...prev,
         slides: prev.slides.map((s) =>
           s.id === slideId
-            ? { ...s, imageUrl: data.imageUrl, isGeneratingImage: false }
+            ? {
+                ...s,
+                imageUrl: data.imageUrl,
+                isGeneratingImage: false,
+                stockPhotoId: undefined,
+                stockPhotoAttribution: undefined,
+              }
             : s
         ),
       }));
@@ -491,6 +508,96 @@ export default function App() {
     }));
   };
 
+  // Story Director: Request full story diagnosis from /api/story-director
+  const handleAnalyzeStory = async () => {
+    setIsStoryDirectorOpen(true);
+    setIsStoryAnalyzing(true);
+    setStoryAnalysisError(null);
+    setStoryAnalysis(null);
+
+    // Deep clone current project.slides as immutable snapshot for Before comparison
+    const snapshot: CardSlide[] = JSON.parse(JSON.stringify(project.slides || []));
+    setStoryOriginalSlides(snapshot);
+
+    try {
+      const requestBody = {
+        topic: project.topic || project.title || '',
+        purpose: project.purpose || '',
+        targetAudience: project.targetAudience || '',
+        tone: project.tone || '',
+        slides: project.slides || [],
+      };
+
+      const response = await fetch('/api/story-director', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'AI 스토리 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errorMsg = errData.error;
+          }
+        } catch (_) {
+          // ignore json error
+        }
+        setStoryAnalysisError(errorMsg);
+        return;
+      }
+
+      const data: StoryDirectorAnalysis = await response.json();
+      setStoryAnalysis(data);
+    } catch (err: any) {
+      console.error('Story Director API request failed:', err);
+      setStoryAnalysisError('AI 스토리 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsStoryAnalyzing(false);
+    }
+  };
+
+  // Story Director Apply v1: Apply single slide suggestion (strictly updates only 5 text fields)
+  const handleApplySingleStorySlide = (suggestion: StorySlideSuggestion) => {
+    if (!suggestion || !suggestion.id) {
+      console.error('[Story Director Apply] 유효하지 않은 제안 데이터입니다.');
+      return;
+    }
+
+    setProject((prev) => {
+      // 1. Strict 1:1 ID matching against latest prev.slides snapshot
+      const targetSlideIndex = prev.slides.findIndex((s) => s.id === suggestion.id);
+      if (targetSlideIndex === -1) {
+        console.error(`[Story Director Apply] 원본 슬라이드(ID: ${suggestion.id})를 찾을 수 없어 적용을 중단합니다.`);
+        return prev;
+      }
+
+      const originalSlide = prev.slides[targetSlideIndex];
+
+      // 2. Explicitly update ONLY the 5 approved fields, preserving ALL other fields perfectly
+      const updatedSlide: CardSlide = {
+        ...originalSlide,
+        slideType: suggestion.suggestedRole,
+        badgeText: suggestion.badgeText,
+        headline: suggestion.headline,
+        body: suggestion.body,
+        highlightWords: Array.isArray(suggestion.highlightWords) ? suggestion.highlightWords : [],
+      };
+
+      const updatedSlides = [...prev.slides];
+      updatedSlides[targetSlideIndex] = updatedSlide;
+
+      // 3. Update project state with fresh array
+      return {
+        ...prev,
+        slides: updatedSlides,
+      };
+    });
+  };
+
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
       {/* Top Navigation Bar */}
@@ -501,6 +608,7 @@ export default function App() {
         onUpdateProject={handleUpdateProject}
         onOpenNewModal={() => setIsNewModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenStoryDirector={handleAnalyzeStory}
       />
 
       {/* Main Workspace Area */}
@@ -655,6 +763,8 @@ export default function App() {
                   slide={currentSlide}
                   theme={currentTheme}
                   totalSlides={project.slides.length}
+                  allSlides={project.slides}
+                  projectAspectRatio={project.aspectRatio}
                   projectHeadlineFont={project.headlineFont}
                   projectBodyFont={project.bodyFont}
                   onUpdateSlide={handleUpdateSlide}
@@ -702,6 +812,19 @@ export default function App() {
         project={project}
         theme={currentTheme}
         activeSlideIndex={currentSlideIndex}
+      />
+
+      {/* Story Director Modal */}
+      <StoryDirectorModal
+        isOpen={isStoryDirectorOpen}
+        onClose={() => setIsStoryDirectorOpen(false)}
+        originalSlides={storyOriginalSlides}
+        currentSlides={project.slides}
+        analysis={storyAnalysis}
+        isLoading={isStoryAnalyzing}
+        error={storyAnalysisError}
+        onRetry={handleAnalyzeStory}
+        onApplySingleSlide={handleApplySingleStorySlide}
       />
 
       {/* 📋 Global Clipboard Image Paste Toast */}

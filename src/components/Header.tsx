@@ -21,6 +21,7 @@ interface HeaderProps {
   onUpdateProject: (updates: Partial<CardNewsProject>) => void;
   onOpenNewModal: () => void;
   onOpenExportModal: () => void;
+  onOpenStoryDirector?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -30,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   onUpdateProject,
   onOpenNewModal,
   onOpenExportModal,
+  onOpenStoryDirector,
 }) => {
   return (
     <header className="h-16 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 px-3.5 sm:px-6 flex items-center justify-between z-30 flex-shrink-0">
@@ -130,10 +132,23 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
+        {/* Story Director Button */}
+        {onOpenStoryDirector && (
+          <button
+            onClick={onOpenStoryDirector}
+            className="px-2.5 sm:px-3.5 py-2 bg-gradient-to-r from-amber-500/15 via-purple-500/15 to-indigo-500/15 hover:from-amber-500/25 hover:to-indigo-500/25 text-amber-300 hover:text-amber-200 font-bold text-xs rounded-xl border border-amber-500/40 hover:border-amber-400/80 flex items-center gap-1.5 transition-all shadow-sm shadow-amber-500/5 active:scale-95 flex-shrink-0"
+            title="전체 슬라이드의 스토리 흐름과 중복을 분석하고 개선안을 비교합니다."
+          >
+            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 animate-pulse" />
+            <span className="hidden lg:inline">전체 스토리 다듬기</span>
+            <span className="lg:hidden">스토리 다듬기</span>
+          </button>
+        )}
+
         {/* New Generation Button */}
         <button
           onClick={onOpenNewModal}
-          className="px-3 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1.5 transition-all shadow-sm"
+          className="px-3 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1.5 transition-all shadow-sm flex-shrink-0"
         >
           <Plus className="w-4 h-4 text-indigo-400" />
           <span className="hidden sm:inline">새 카드뉴스</span>

@@ -30,6 +30,7 @@ export async function generateContentWithFallback(
   }
 ): Promise<any> {
   const candidateModels = params.models || [
+    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
     'gemini-1.5-pro',

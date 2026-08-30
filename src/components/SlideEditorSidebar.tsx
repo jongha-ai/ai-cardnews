@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CardSlide, SlideLayout, CardTheme } from '../types';
+import { CardSlide, SlideLayout, CardTheme, AspectRatio } from '../types';
 import { FontPickerDropdown } from './FontPickerDropdown';
 import { getSmartTopicPhoto, extractStockKeywords, buildDynamicStockPhotoUrl } from '../utils/photoMatcher';
 import { processImageBlobToBase64 } from '../utils/imageUtils';
+import { StockSearchResult, StockCandidatePhoto } from '../utils/unsplashSearchService';
 import { 
   Sparkles, 
   Copy, 
@@ -38,6 +39,8 @@ interface SlideEditorSidebarProps {
   slide: CardSlide;
   theme: CardTheme;
   totalSlides: number;
+  allSlides?: CardSlide[];
+  projectAspectRatio?: AspectRatio;
   projectHeadlineFont?: string;
   projectBodyFont?: string;
   onUpdateSlide: (updatedSlide: Partial<CardSlide>) => void;
@@ -51,6 +54,8 @@ export const SlideEditorSidebar: React.FC<SlideEditorSidebarProps> = ({
   slide,
   theme,
   totalSlides,
+  allSlides,
+  projectAspectRatio,
   projectHeadlineFont,
   projectBodyFont,
   onUpdateSlide,
@@ -70,7 +75,99 @@ export const SlideEditorSidebar: React.FC<SlideEditorSidebarProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [isSearchingStock, setIsSearchingStock] = useState(false);
+  const [stockSearchResult, setStockSearchResult] = useState<StockSearchResult | null>(null);
+  const [stockSearchError, setStockSearchError] = useState<string | null>(null);
+  const [directUrlInput, setDirectUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset stock search result when slide changes
+  useEffect(() => {
+    setStockSearchResult(null);
+    setStockSearchError(null);
+  }, [slide.id]);
+
+  const handleApplyDirectUrl = () => {
+    const trimmed = directUrlInput.trim();
+    if (!trimmed) return;
+    onUpdateSlide({
+      imageUrl: trimmed,
+      stockPhotoId: undefined,
+      stockPhotoAttribution: undefined,
+    });
+    setUploadSuccess('직접 입력한 이미지 URL이 적용되었습니다.');
+    setTimeout(() => setUploadSuccess(null), 3000);
+    setDirectUrlInput('');
+  };
+
+  const handleSearchStockImages = async () => {
+    try {
+      setIsSearchingStock(true);
+      setStockSearchError(null);
+
+      // Collect usedPhotoIds from all OTHER slides in the project
+      const usedPhotoIds = (allSlides || [])
+        .filter((s) => s.id !== slide.id && s.stockPhotoId)
+        .map((s) => s.stockPhotoId!);
+
+      const payload = {
+        headline: slide.headline,
+        body: slide.body,
+        slideType: slide.slideType,
+        primary_keyword: slide.stockPhotoKeywords?.primary_keyword || slide.headline,
+        secondary_keyword: slide.stockPhotoKeywords?.secondary_keyword || '',
+        aspectRatio: projectAspectRatio || '1:1',
+        usedPhotoIds,
+      };
+
+      const res = await fetch('/api/stock-image-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`스톡 이미지 검색 실패 (HTTP ${res.status})`);
+      }
+
+      const data: StockSearchResult = await res.json();
+      setStockSearchResult(data);
+    } catch (err: any) {
+      console.error('handleSearchStockImages error:', err);
+      setStockSearchError(err?.message || '스톡 이미지 검색 중 오류가 발생했습니다.');
+    } finally {
+      setIsSearchingStock(false);
+    }
+  };
+
+  const handleSelectStockCandidate = (candidate: StockCandidatePhoto) => {
+    // 1. Update active slide imageUrl, stockPhotoId, and attribution
+    onUpdateSlide({
+      imageUrl: candidate.urls.regular,
+      stockPhotoId: candidate.id,
+      stockPhotoAttribution: {
+        photographerName: candidate.user.name,
+        photographerUsername: candidate.user.username,
+        profileUrl: candidate.user.profileUrl,
+        unsplashUrl: 'https://unsplash.com',
+        downloadLocation: candidate.downloadLocation,
+      },
+    });
+
+    setUploadSuccess(`[${candidate.user.name}] 작가의 스톡 사진이 적용되었습니다.`);
+    setTimeout(() => setUploadSuccess(null), 3000);
+
+    // 2. Track Unsplash download event on server in background (simplified payload)
+    fetch('/api/unsplash-track-download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        photoId: candidate.id,
+      }),
+    }).catch((err) => {
+      console.warn('[Unsplash Track] Download event tracking error:', err);
+    });
+  };
 
   const handleFileUpload = async (file: File | Blob, customSuccessMsg?: string) => {
     try {
@@ -99,7 +196,11 @@ export const SlideEditorSidebar: React.FC<SlideEditorSidebarProps> = ({
       }
 
       const base64Url = await processImageBlobToBase64(file, 1600, 0.92);
-      onUpdateSlide({ imageUrl: base64Url });
+      onUpdateSlide({ 
+        imageUrl: base64Url,
+        stockPhotoId: undefined,
+        stockPhotoAttribution: undefined,
+      });
       setUploadSuccess(customSuccessMsg || `${fileName} 적용 완료`);
       setTimeout(() => setUploadSuccess(null), 3500);
     } catch (err: any) {
@@ -151,6 +252,8 @@ export const SlideEditorSidebar: React.FC<SlideEditorSidebarProps> = ({
     onUpdateSlide({ 
       imageUrl: freshPhoto,
       stockPhotoKeywords: keywords,
+      stockPhotoId: undefined,
+      stockPhotoAttribution: undefined,
     });
     setUploadSuccess(cycle ? '새로운 스톡 사진으로 교체되었습니다.' : '주제 맞춤형 고화질 사진으로 재설정되었습니다.');
     setTimeout(() => setUploadSuccess(null), 3000);
@@ -604,6 +707,30 @@ export const SlideEditorSidebar: React.FC<SlideEditorSidebarProps> = ({
                 )}
               </div>
 
+              {/* Unsplash Photographer Attribution */}
+              {slide.stockPhotoAttribution && (
+                <div className="px-1 text-[10px] text-slate-400 truncate flex items-center gap-1">
+                  <span>Photo by</span>
+                  <a
+                    href={`${slide.stockPhotoAttribution.profileUrl}?utm_source=ai_cardnews_generator&utm_medium=referral`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-slate-300 hover:text-indigo-300 font-medium truncate"
+                  >
+                    {slide.stockPhotoAttribution.photographerName}
+                  </a>
+                  <span>on</span>
+                  <a
+                    href="https://unsplash.com?utm_source=ai_cardnews_generator&utm_medium=referral"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-slate-300 hover:text-indigo-300 font-medium"
+                  >
+                    Unsplash
+                  </a>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <button
                   disabled={slide.isGeneratingImage}
@@ -668,6 +795,127 @@ export const SlideEditorSidebar: React.FC<SlideEditorSidebarProps> = ({
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* 🌟 Ranked Stock Photo Recommendations (Unsplash Top 3) */}
+            <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-3 shadow-inner">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  추천 스톡이미지 (Top 3)
+                </span>
+                <button
+                  type="button"
+                  disabled={isSearchingStock}
+                  onClick={handleSearchStockImages}
+                  className="px-2.5 py-1 text-xs font-semibold bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 rounded-lg border border-indigo-500/40 flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSearchingStock ? 'animate-spin' : ''}`} />
+                  <span>{stockSearchResult ? '후보 새로고침' : '추천 스톡이미지 찾기'}</span>
+                </button>
+              </div>
+
+              {/* Loading State */}
+              {isSearchingStock && (
+                <div className="py-6 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-900/50 rounded-lg border border-slate-800/80">
+                  <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin" />
+                  <span className="text-xs">본문과 어울리는 고화질 스톡이미지 검색 & 랭킹 중...</span>
+                </div>
+              )}
+
+              {/* Error State */}
+              {stockSearchError && !isSearchingStock && (
+                <div className="p-2.5 bg-rose-950/30 border border-rose-800/40 rounded-lg text-xs text-rose-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{stockSearchError}</span>
+                </div>
+              )}
+
+              {/* Search Results: Top 3 Shortlist */}
+              {stockSearchResult && !isSearchingStock && (stockSearchResult.rankedCandidates?.length || 0) > 0 && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    {stockSearchResult.rankedCandidates.slice(0, 3).map((candidate) => {
+                      const isRecommended = stockSearchResult.recommendedPhoto?.id === candidate.photo.id;
+                      const isSelected = slide.stockPhotoId === candidate.photo.id || slide.imageUrl === candidate.photo.urls.regular;
+
+                      return (
+                        <div
+                          key={candidate.photo.id}
+                          onClick={() => handleSelectStockCandidate(candidate.photo)}
+                          className={`relative group rounded-lg overflow-hidden border cursor-pointer transition-all duration-200 ${
+                            isSelected
+                              ? 'border-emerald-500 ring-2 ring-emerald-500/50 shadow-md shadow-emerald-500/20'
+                              : 'border-slate-800 hover:border-indigo-400 hover:scale-[1.02]'
+                          }`}
+                        >
+                          {/* Thumbnail Image */}
+                          <div className="aspect-square bg-slate-900 relative">
+                            <img
+                              src={candidate.photo.urls.small || candidate.photo.urls.thumb}
+                              alt={candidate.photo.alt_description || '스톡 이미지'}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+
+                            {/* Recommended Badge */}
+                            {isRecommended && (
+                              <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-emerald-600/90 backdrop-blur-md text-white font-bold text-[9px] rounded shadow-sm flex items-center gap-0.5">
+                                <span>⭐ 추천</span>
+                              </div>
+                            )}
+
+                            {/* Score Pill */}
+                            <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-slate-950/80 backdrop-blur-md text-[9px] font-mono text-slate-200 rounded border border-slate-700/50">
+                              {candidate.rankScore.totalScore}점
+                            </div>
+
+                            {/* Selected Checkmark Overlay */}
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-emerald-950/40 backdrop-blur-[1px] flex items-center justify-center">
+                                <div className="px-2 py-1 bg-emerald-500 text-white rounded-md text-[10px] font-bold shadow flex items-center gap-1">
+                                  <Check className="w-3 h-3" />
+                                  <span>적용됨</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Photographer credit snippet */}
+                          <div className="p-1.5 bg-slate-900/95 border-t border-slate-800 text-[10px] text-slate-400 truncate">
+                            <span className="truncate block font-medium">
+                              📷 {candidate.photo.user.name}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    💡 사진을 클릭하면 현재 슬라이드에 즉시 적용됩니다.
+                  </p>
+                </div>
+              )}
+
+              {/* NO_MATCH State */}
+              {stockSearchResult && !isSearchingStock && (stockSearchResult.matchSource === 'no_match' || (stockSearchResult.rankedCandidates?.length || 0) === 0) && (
+                <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg text-center space-y-1.5">
+                  <p className="text-xs font-semibold text-slate-300">
+                    🔍 적합한 스톡이미지를 찾지 못했습니다.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    위의 <span className="text-indigo-300 font-medium">AI 이미지 새로 생성</span> 버튼을 이용해 맞춤형 이미지를 생성해보세요.
+                  </p>
+                </div>
+              )}
+
+              {/* Initial Guide (Before search) */}
+              {!stockSearchResult && !isSearchingStock && !stockSearchError && (
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  본문 내용과 맥락에 가장 잘 맞는 고화질 스톡 사진 Top 3를 분석하여 추천합니다.
+                </p>
+              )}
             </div>
 
             {/* 📁 Upload from PC (Drag and drop zone & file picker) */}
@@ -751,6 +999,37 @@ export const SlideEditorSidebar: React.FC<SlideEditorSidebarProps> = ({
                   <span>{uploadError}</span>
                 </div>
               )}
+            </div>
+
+            {/* 🔗 Direct Image URL Input */}
+            <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+                직접 이미지 URL 입력
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={directUrlInput}
+                  onChange={(e) => setDirectUrlInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleApplyDirectUrl();
+                  }}
+                  placeholder="https://example.com/image.jpg"
+                  className="flex-1 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyDirectUrl}
+                  disabled={!directUrlInput.trim()}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition-colors cursor-pointer disabled:cursor-not-allowed"
+                >
+                  적용
+                </button>
+              </div>
+              <span className="text-[10px] text-slate-500 block">
+                웹상의 고화질 이미지 링크를 직접 붙여넣어 슬라이드에 적용할 수 있습니다.
+              </span>
             </div>
 
             {/* 🖼️ Image Fit Mode & Object Position Alignment */}

@@ -41,6 +41,14 @@ export interface StockPhotoKeywords {
   secondary_keyword: string;
 }
 
+export interface StockPhotoAttribution {
+  photographerName: string;
+  photographerUsername: string;
+  profileUrl: string;
+  unsplashUrl: string;
+  downloadLocation?: string;
+}
+
 export interface CardSlide {
   id: string;
   slideNumber: number;
@@ -54,6 +62,8 @@ export interface CardSlide {
   imageStyleKeywords: string[];
   suggestedLayout: SlideLayout;
   imageUrl?: string;
+  stockPhotoId?: string;
+  stockPhotoAttribution?: StockPhotoAttribution;
   stockPhotoKeywords?: StockPhotoKeywords;
   imageFit?: 'cover' | 'contain';
   imagePosition?: 'top' | 'center' | 'bottom';
@@ -104,3 +114,33 @@ export interface RefineSlideRequest {
     tone?: string;
   };
 }
+
+export interface StorySlideSuggestion {
+  id: string;
+  slideNumber: number;
+  originalRole: SlideType;
+  suggestedRole: SlideType;
+  badgeText: string;
+  headline: string;
+  body: string;
+  highlightWords: string[];
+  changeReason: string;
+}
+
+export interface StoryDirectorAnalysis {
+  overallSummary: string;
+  duplicateIssues: string[];
+  flowIssues: string[];
+  ctaIssue: string;
+  storyStrategy: string;
+  suggestions: StorySlideSuggestion[];
+}
+
+export interface StoryDirectorRequest {
+  topic: string;
+  purpose?: string;
+  targetAudience?: string;
+  tone?: string;
+  slides: CardSlide[];
+}
+

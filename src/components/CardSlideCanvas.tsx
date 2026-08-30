@@ -359,13 +359,25 @@ export const CardSlideCanvas = forwardRef<HTMLDivElement, CardSlideCanvasProps>(
       posMode === 'top' ? '50% 15%' : posMode === 'bottom' ? '50% 85%' : '50% 50%';
 
     const renderSlideImage = (extraClasses = '', styleObj: React.CSSProperties = {}) => {
-      if (!hasValidImage) {
+      if (!activeImageSrc) {
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-950 text-slate-400 text-xs p-4 select-none">
-            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mb-2 shadow-inner">
-              <Sparkles className="w-5 h-5 text-indigo-400" />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-950 text-slate-400 text-xs p-4 select-none gap-1.5 text-center">
+            <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mb-1 shadow-inner">
+              <ImageOff className="w-4 h-4 text-slate-400" />
             </div>
-            <span className="font-medium text-[clamp(0.65rem,2.2cqi,0.78rem)] text-slate-300">이미지 불러오는 중</span>
+            <span className="font-medium text-[clamp(0.65rem,2.2cqi,0.78rem)] text-slate-300">추천 이미지가 없습니다</span>
+            <span className="text-[clamp(0.55rem,1.8cqi,0.68rem)] text-slate-500">우측 이미지 프롬프트에서 사진을 추가하세요</span>
+          </div>
+        );
+      }
+
+      if (imageLoadFailed) {
+        return (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-rose-950/30 via-slate-900 to-slate-950 text-slate-400 text-xs p-4 select-none gap-1.5 text-center">
+            <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mb-1 shadow-inner">
+              <ImageOff className="w-4 h-4 text-rose-400" />
+            </div>
+            <span className="font-medium text-[clamp(0.65rem,2.2cqi,0.78rem)] text-rose-300">이미지를 불러올 수 없습니다</span>
           </div>
         );
       }
