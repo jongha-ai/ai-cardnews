@@ -87,12 +87,12 @@ async function generateContentWithFallback(
   throw lastError || new Error("All Gemini models failed to respond.");
 }
 
-import { extractStockKeywords } from "./src/utils/photoMatcher";
+import { extractStockKeywords } from "./src/utils/photoMatcher.js";
 import {
   searchStockImageCandidates,
   enrichSlidesWithRankedStockPhotos,
   trackUnsplashDownload,
-} from "./src/server/unsplashService";
+} from "./src/server/unsplashService.js";
 
 // Health check (supports both /api/health and /health)
 app.get(["/api/health", "/health"], (_req: Request, res: Response) => {

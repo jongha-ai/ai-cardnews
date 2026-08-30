@@ -1,5 +1,5 @@
 import { Type } from '@google/genai';
-import { getGeminiClient, generateContentWithFallback } from './_gemini';
+import { getGeminiClient, generateContentWithFallback } from './_gemini.js';
 
 const STYLE_KEYWORD_MAP: Record<string, string> = {
   'minimalist': '미니멀',

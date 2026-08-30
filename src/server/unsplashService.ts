@@ -16,8 +16,8 @@ import {
   StockSearchResult,
   StockCandidatePhoto,
   RankedPhotoCandidate,
-} from '../utils/unsplashSearchService';
-import { CardSlide, StockPhotoAttribution } from '../types';
+} from '../utils/unsplashSearchService.js';
+import { CardSlide, StockPhotoAttribution } from '../types.js';
 
 export {
   searchStockImageCandidates,

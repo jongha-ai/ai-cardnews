@@ -1,4 +1,4 @@
-import { getGeminiClient, generateContentWithFallback } from './_gemini';
+import { getGeminiClient, generateContentWithFallback } from './_gemini.js';
 
 export default async function handler(req: any, res: any) {
   // Enable CORS

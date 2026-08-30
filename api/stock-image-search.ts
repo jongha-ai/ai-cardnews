@@ -1,4 +1,4 @@
-import { searchStockImageCandidates } from '../src/utils/unsplashSearchService';
+import { searchStockImageCandidates } from '../src/utils/unsplashSearchService.js';
 
 export default async function handler(req: any, res: any) {
   // Enable CORS

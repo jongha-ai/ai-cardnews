@@ -1,4 +1,4 @@
-import { trackUnsplashDownload } from '../src/server/unsplashService';
+import { trackUnsplashDownload } from '../src/server/unsplashService.js';
 
 export default async function handler(req: any, res: any) {
   // Enable CORS
