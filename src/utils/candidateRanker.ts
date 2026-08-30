@@ -7,7 +7,7 @@
  * All word comparisons must use exact token boundary matching (\bword\b or Token Set).
  */
 
-import { StockCandidatePhoto } from './unsplashSearchService';
+import { StockCandidatePhoto } from './unsplashSearchService.js';
 
 export interface SceneRequirements {
   subjects: string[];

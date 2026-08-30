@@ -4,7 +4,7 @@
  * photo ID deduplication, and attribution metadata extraction.
  */
 
-import { rankPhotoCandidates } from './candidateRanker';
+import { rankPhotoCandidates } from './candidateRanker.js';
 
 export interface UnsplashRawPhoto {
   id: string;
