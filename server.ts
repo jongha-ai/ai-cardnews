@@ -3,6 +3,7 @@ import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config();
 
 const app = express();
@@ -41,7 +42,7 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
-// Resilient Gemini generateContent helper with automatic model fallback
+// Resilient Gemini generateContent helper with automatic model fallback and 429 backoff
 async function generateContentWithFallback(
   ai: GoogleGenAI,
   params: {
@@ -52,37 +53,34 @@ async function generateContentWithFallback(
 ): Promise<any> {
   const candidateModels = params.models || [
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
   ];
 
   let lastError: any = null;
 
   for (const modelName of candidateModels) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: params.contents,
-        config: params.config,
-      });
-      return response;
-    } catch (err: any) {
-      lastError = err;
-      const isUnavailableOrRateLimited =
-        err?.status === 503 ||
-        err?.status === 429 ||
-        err?.message?.includes("503") ||
-        err?.message?.includes("429") ||
-        err?.message?.includes("high demand") ||
-        err?.message?.includes("UNAVAILABLE") ||
-        err?.message?.includes("RESOURCE_EXHAUSTED");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: params.contents,
+          config: params.config,
+        });
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const is429 =
+          err?.status === 429 ||
+          err?.message?.includes("429") ||
+          err?.message?.includes("RESOURCE_EXHAUSTED");
 
-      if (isUnavailableOrRateLimited) {
-        console.warn(`Model ${modelName} unavailable or rate-limited (${err.message}). Trying next fallback model...`);
-        continue;
+        if (is429 && attempt < 2) {
+          console.warn(`Model ${modelName} 429 rate limited. Retrying in 6s (attempt ${attempt + 1}/3)...`);
+          await new Promise((r) => setTimeout(r, 6000));
+          continue;
+        }
+        console.warn(`Model ${modelName} call failed:`, err?.message || err);
+        break;
       }
-      console.warn(`Model ${modelName} call failed: ${err.message}. Retrying with next model...`);
     }
   }
 
