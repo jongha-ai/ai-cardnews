@@ -1,6 +1,5 @@
 import { Type } from '@google/genai';
 import { getGeminiClient, generateContentWithFallback } from './_gemini';
-import { extractStockKeywords } from '../src/utils/photoMatcher';
 import { enrichSlidesWithRankedStockPhotos } from '../src/server/unsplashService';
 
 export default async function handler(req: any, res: any) {
@@ -14,7 +13,7 @@ export default async function handler(req: any, res: any) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'METHOD_NOT_ALLOWED', message: '허용되지 않은 HTTP 메소드입니다.' });
   }
 
   const bodyData = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
@@ -29,48 +28,20 @@ export default async function handler(req: any, res: any) {
     customNotes = '',
   } = bodyData;
 
-  const count = Number(slideCount) || 5;
-  const cleanTopic = (topic || 'AI 카드뉴스').replace(/[^\w\s가-힣]/g, '').trim() || 'AI 카드뉴스';
-
-  const generateFallback = () => {
-    return {
-      title: topic || `${cleanTopic} 완벽 가이드`,
-      subTitle: purpose || `누구나 쉽게 이해하고 바로 실천하는 ${cleanTopic} 핵심 요약`,
-      category: themeId || 'LIFESTYLE & INSIGHT',
-      tags: ['#카드뉴스', `#${cleanTopic.replace(/\s+/g, '')}`, '#실전팁', '#인사이트'],
-      caption: `${cleanTopic}, 아직도 혼자 고민하며 시간 낭비하고 계셨나요? ⏳\n\n바쁜 분들을 위한 ${count}단계 핵심 실천 가이드를 정리했습니다!\n━━━━━━━━━━━━━━━\n1️⃣ ${cleanTopic} 기본 원리 점검\n👉 문제의 원인을 먼저 파악하고 불필요한 시행착오를 줄이세요.\n\n2️⃣ 실전 적용 노하우\n👉 단계별 체크리스트를 따라 매일 10분씩 작은 습관으로 만드세요.\n\n3️⃣ 지속 가능한 시스템 구축\n👉 한 번의 실행으로 끝나지 않도록 자동화 루틴을 완성하세요.\n━━━━━━━━━━━━━━━\n💡 핵심은 '이해'가 아니라 '즉시 실행'입니다.\n\n📌 나중에 다시 보며 적용하려면 지금 [저장]해두세요!\n💬 주변에 꼭 필요한 분들께 [공유]로 알려주세요!\n\n#${cleanTopic.replace(/\s+/g, '')} #카드뉴스 #실전팁 #성장루틴`,
-      slides: Array.from({ length: count }).map((_, idx) => {
-        const headline = idx === 0 ? `✨ ${cleanTopic}\n지금 꼭 알아야 할 핵심 포인트` : `${idx}단계: ${cleanTopic} 핵심 실천 전략`;
-        const body = `이 단계에서는 ${cleanTopic}와 관련된 가장 효과적인 실천 방법 및 핵심 지식을 전달합니다.\n2~3문장으로 간결하게 구성하여 모바일에서 한눈에 쏙 들어옵니다.`;
-        const keywords = extractStockKeywords({ headline, body, slideNumber: idx + 1 });
-        return {
-          slideNumber: idx + 1,
-          slideType: idx === 0 ? 'cover' : idx === count - 1 ? 'cta' : 'body',
-          badgeText: idx === 0 ? 'GUIDE' : `POINT 0${idx}`,
-          headline,
-          body,
-          highlightWords: [cleanTopic, '핵심 포인트'],
-          imagePrompt: `밝고 정돈된 국내 비즈니스 공간에서 ${cleanTopic} 핵심 전략을 점검 중인 30대 한국인 직장인, 자연스러운 표정과 부드러운 채광, 고화질 실사 사진, ${aspectRatio} 비율`,
-          imagePromptKorean: `${cleanTopic}의 핵심 메시지를 담은 세련된 한국형 고화질 비주얼`,
-          imageStyleKeywords: ['고화질 포토', '미니멀', '스튜디오 조명'],
-          stockPhotoKeywords: keywords,
-          suggestedLayout: 'split_top_image',
-          imageUrl: undefined,
-          stockPhotoId: undefined,
-          stockPhotoAttribution: undefined,
-        };
-      }),
-    };
-  };
-
   if (!topic || typeof topic !== 'string' || topic.trim() === '') {
-    return res.status(200).json(generateFallback());
+    return res.status(400).json({
+      error: 'INVALID_REQUEST',
+      message: '주제(topic)를 입력해주세요.',
+    });
   }
 
   try {
     const ai = getGeminiClient();
     if (!ai) {
-      return res.status(200).json(generateFallback());
+      return res.status(500).json({
+        error: 'GEMINI_CONFIG_ERROR',
+        message: 'Gemini API 설정이 올바르지 않습니다. API 키를 확인해주세요.',
+      });
     }
 
     const systemInstruction = `당신은 대한민국 최고의 소셜 미디어(인스타그램, 링크드인, 페이스북, 블라인드) 카드뉴스 전문 크리에이터이자 수석 비주얼 아트 디렉터, AI 이미지 프롬프트 엔지니어 및 카드뉴스 스톡 이미지 매칭 전문가입니다.
@@ -241,21 +212,37 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
 
     const text = response?.text;
     if (!text) {
-      return res.status(200).json(generateFallback());
+      return res.status(502).json({
+        error: 'EMPTY_AI_RESPONSE',
+        message: 'AI로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해주세요.',
+      });
     }
 
-    const parsedData = JSON.parse(text);
+    let parsedData: any;
+    try {
+      parsedData = JSON.parse(text);
+    } catch (parseErr: any) {
+      console.error('Failed to parse Gemini JSON response:', text);
+      return res.status(502).json({
+        error: 'MALFORMED_AI_RESPONSE',
+        message: 'AI 응답 형식이 올바르지 않습니다. 다시 시도해주세요.',
+      });
+    }
+
+    if (!parsedData || !Array.isArray(parsedData.slides) || parsedData.slides.length === 0) {
+      return res.status(502).json({
+        error: 'INVALID_SLIDES_SCHEMA',
+        message: '생성된 슬라이드 데이터가 올바르지 않습니다. 다시 시도해주세요.',
+      });
+    }
+
     const unsplashKey = process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_KEY || '';
 
-    // Default basic slide normalization
+    // Default basic slide normalization without fallback keyword contamination
     let enrichedSlides = parsedData.slides.map((s: any, idx: number) => {
       const keywords = s.stockPhotoKeywords?.primary_keyword
         ? s.stockPhotoKeywords
-        : extractStockKeywords({
-            headline: s.headline,
-            body: s.body,
-            slideNumber: idx + 1,
-          });
+        : undefined;
 
       return {
         ...s,
@@ -285,7 +272,23 @@ ${customNotes ? `- 추가 참고사항/원본 텍스트: ${customNotes}` : ""}
       slides: enrichedSlides,
     });
   } catch (err: any) {
-    console.error('Vercel API generate-cardnews error:', err);
-    return res.status(200).json(generateFallback());
+    console.error('Vercel API generate-cardnews error:', err?.message || err);
+    const is429 =
+      err?.status === 429 ||
+      err?.message?.includes('429') ||
+      err?.message?.includes('RESOURCE_EXHAUSTED');
+
+    if (is429) {
+      return res.status(429).json({
+        error: 'GEMINI_RATE_LIMIT_EXCEEDED',
+        message: 'AI 요청 한도를 일시적으로 초과했습니다. 약 1분 후 다시 시도해주세요.',
+        retryable: true,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'CARDNEWS_GENERATION_FAILED',
+      message: '카드뉴스 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+    });
   }
 }
