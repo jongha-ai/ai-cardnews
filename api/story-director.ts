@@ -1,5 +1,5 @@
 import { Type } from '@google/genai';
-import { getGeminiClient, generateContentWithFallback } from './_gemini';
+import { getGeminiClient, generateContentWithFallback } from './_gemini.js';
 
 const ALLOWED_SLIDE_TYPES = ['cover', 'problem', 'body', 'stat', 'tip', 'quote', 'summary', 'cta'] as const;
 

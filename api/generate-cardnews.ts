@@ -1,6 +1,6 @@
 import { Type } from '@google/genai';
-import { getGeminiClient, generateContentWithFallback } from './_gemini';
-import { enrichSlidesWithRankedStockPhotos } from '../src/server/unsplashService';
+import { getGeminiClient, generateContentWithFallback } from './_gemini.js';
+import { enrichSlidesWithRankedStockPhotos } from '../src/server/unsplashService.js';
 
 export default async function handler(req: any, res: any) {
   // Enable CORS
